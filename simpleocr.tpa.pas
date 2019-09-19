@@ -1,36 +1,29 @@
-unit OCRUtils;
+unit simpleocr.tpa;
 {==============================================================================]
-  Copyright (c) 2016, Jarl `slacky` Holta
+  Copyright (c) 2019, Jarl `slacky` Holta
   Project: SimpleOCR
-  Project URL: https://github.com/WarPie/SimpleOCR
+  Project URL: https://github.com/slackydev/SimpleOCR
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
-  
-  Utilities needed for the OCR-engine.
 [==============================================================================}
 {$mode objfpc}{$H+}
 {$macro on}
-{$inline on}
- 
+
 interface
 
 uses
-  SysUtils, OCRTypes;
+  simpleocr.types;
 
 procedure Exch(var A,B:UInt8); Inline; overload;
 procedure Exch(var A,B:Int32); Inline; overload;
 procedure Exch(var A,B:TPoint); Inline; overload;
 
-function TPABounds(const TPA: TPointArray): TBox; Inline;
-function CombineTPA(const TPA1,TPA2: TPointArray): TPointArray;
-function InvertTPA(const TPA:TPointArray): TPointArray;
+function TPABounds(const TPA: TPointArray): TBox;
+function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
+function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX,SY:Integer);
-procedure InsSortTPA(var Arr:TPointArray; Weight:TIntArray; Left, Right:Int32); Inline;
+procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right:Int32);
 procedure SortTPAbyColumn(var Arr: TPointArray);
 
-function ListDir(Path:String): TStringArray;
-function FindFontPath(Font:String): String;
-
-//-----------------------------------------------------------------------------
 implementation 
 
 procedure Exch(var A,B:UInt8);
@@ -56,7 +49,7 @@ function TPABounds(const TPA: TPointArray): TBox;
 var
   I,L : Integer;
 begin
-  FillChar(Result, SizeOf(TBox), 0);
+  Result := Default(TBox);
   L := High(TPA);
   if (l < 0) then Exit;
   Result.x1 := TPA[0].x;
@@ -78,7 +71,6 @@ end;
 
 {*
  Unite two TPAs into one
- ... While also removing all duplicates if `RemoveDupes` is set, so it wont be any overlapping.
 *}
 function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
 begin
@@ -89,13 +81,12 @@ begin
   Move(TPA2[Low(TPA2)], Result[Length(TPA1)], Length(TPA2)*SizeOf(TPA2[0]));
 end; 
 
-
 {*
  Returns the points not in the TPA within the area the TPA covers.
 *}
 function InvertTPA(const TPA:TPointArray): TPointArray;
 var
-  Matrix: TIntMatrix;
+  Matrix: T2DIntegerArray;
   i,h,x,y: Integer;
   Area: TBox;
 begin
@@ -114,7 +105,8 @@ begin
     for x:=0 to Area.X2 do
       if Matrix[y][x] <> 1 then
       begin
-        Result[i] := Point(x+Area.x1,y+Area.y1);
+        Result[i].X := x+Area.x1;
+        Result[i].Y := y+Area.y1;
         Inc(i);
       end;
   SetLength(Result, i);
@@ -136,9 +128,9 @@ begin;
   end;
 end;
 
-
 //Fast TPointArray sorting for small arrays.
-procedure InsSortTPA(var Arr:TPointArray; Weight:TIntArray; Left, Right:Int32); Inline;
+procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left,
+  Right: Int32);
 var i, j:Int32;
 begin
   for i := Left to Right do
@@ -149,12 +141,11 @@ begin
     end;
 end;
 
-
 //Sort small TPA by Column.
 procedure SortTPAbyColumn(var Arr: TPointArray);
 var
   i,Hi: Int32;
-  Weight:TIntArray;
+  Weight:TIntegerArray;
   Area : TBox;
 begin
   Hi := High(Arr);
@@ -165,44 +156,6 @@ begin
     Weight[i] := (Arr[i].x * (Area.Y2-Area.Y1) + Arr[i].y);
   InsSortTPA(Arr, Weight, 0, Hi);
   SetLength(Weight, 0);
-end;
-
-
-
-function ListDir(Path:String): TStringArray;
-var
-  l: Int32;
-  SR : TSearchRec;
-begin
-  l := 0;
-  if FindFirst(Path + '*', faAnyFile and faDirectory, SR) = 0 then
-  begin
-    repeat
-      if (SR.Name <> '.') and (SR.Name <> '..') then
-      begin
-        inc(l);
-        SetLength(Result, l);
-        Result[l-1] := SR.Name;
-      end;
-    until FindNext(SR) <> 0;
-    FindClose(SR);
-  end;
-end;
-
-function FindFontPath(Font:String): String;
-var
-  i,j:Int32;
-  paths:array [0..2] of string = ('Fonts/','Includes/','');
-begin
-  if not(Font[Length(Font)] = '/') then Font += '/';
-  if DirectoryExists(Font) then Exit(Font);
-
-  for i:=0 to High(paths) do
-    for j:=0 to 6 do
-      if DirectoryExists(paths[i]+Font) then Exit(paths[i] + Font)
-      else paths[i] := '../' + paths[i];
-
-  Result := Font;
 end;
 
 end.

@@ -1,0 +1,5 @@
+*.lps
+*.dll
+*.so
+backup
+lib
