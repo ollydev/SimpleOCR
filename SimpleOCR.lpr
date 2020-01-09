@@ -57,13 +57,18 @@ initialization
                 'TSimpleOCR');
 
   addGlobalFunc('procedure TFontSet.Load(Font: String; Space: Int32 = 4); native;', @TFontSet_Load);
-  addGlobalFunc('function TSimpleOCR.Recognize(Client: T2DIntegerArray; Filter:TCompareRules; Font: TFontSet; MaxWalk: Int32 = 40): String; overload; native;', @TSimpleOCR_Recognize);
+  addGlobalFunc('function TSimpleOCR.Recognize(Client: T2DIntegerArray; Filter: TCompareRules; Font: TFontSet; MaxWalk: Int32 = 40): String; overload; native;', @TSimpleOCR_Recognize);
 
-  addCode('function TSimpleOCR.Recognize(B: TBox; Filter: TCompareRules; Font: TFontSet; MaxWalk: Int32 = 40): AnsiString; overload;'      + LineEnding +
+  addCode('function TSimpleOCR.Recognize(B: TBox; Filter: TCompareRules; Font: TFontSet; MaxWalk: Int32 = 40): AnsiString; overload;'     + LineEnding +
           'var'                                                                                                                           + LineEnding +
           '  Matrix: T2DIntegerArray;'                                                                                                    + LineEnding +
+          '  BMP: Int32;'                                                                                                                 + LineEnding +
           'begin'                                                                                                                         + LineEnding +
-          '  Matrix := System.Client.GetIOManager().ReturnMatrix(B.X1, B.Y1, (B.X2 - B.X1) + 1, (B.Y2 - B.Y1) + 1);'                      + LineEnding +
+          '  // Matrix := System.Client.GetIOManager().ReturnMatrix(B.X1, B.Y1, (B.X2 - B.X1) + 1, (B.Y2 - B.Y1) + 1);'                   + LineEnding +
+          ''                                                                                                                              + LineEnding +
+          '  BMP := BitmapFromClient(B.X1, B.Y1, B.X2, B.Y2);'                                                                            + LineEnding +
+          '  Matrix := BitmapToMatrix(BMP);'                                                                                              + LineEnding +
+          '  FreeBitmap(BMP);'                                                                                                            + LineEnding +
           ''                                                                                                                              + LineEnding +
           '  if Filter.Color <> -1 then'                                                                                                  + LineEnding +
           '    with TRGB32(Filter.Color) do'                                                                                              + LineEnding +
@@ -72,56 +77,40 @@ initialization
           '  Result := Self.Recognize(Matrix, Filter, Font, MaxWalk);'                                                                    + LineEnding +
           'end;'                                                                                                                          + LineEnding +
           ''                                                                                                                              + LineEnding +
+          'function TSimpleOCR.Recognize(TPA: TPointArray; Font: TFontSet; MaxWalk: Int32 = 40): String; overload;'                       + LineEnding +
+          'var'                                                                                                                           + LineEnding +
+          '  Matrix: T2DIntegerArray;'                                                                                                    + LineEnding +
+          '  B: TBox;'                                                                                                                    + LineEnding +
+          '  i: Int32;'                                                                                                                   + LineEnding +
+          'begin'                                                                                                                         + LineEnding +
+          '  B := GetTPABounds(TPA);'                                                                                                     + LineEnding +
+          '  B.X1 -= 1;'                                                                                                                  + LineEnding +
+          '  B.Y1 -= 1;'                                                                                                                  + LineEnding +
+          '  B.X2 += 1;'                                                                                                                  + LineEnding +
+          '  B.Y2 += 1;'                                                                                                                  + LineEnding +
+          ''                                                                                                                              + LineEnding +
+          '  SetLength(Matrix, B.Y2 - B.Y1 + 1, B.X2 - B.X1 + 1);'                                                                        + LineEnding +
+          '  for i := 0 to High(TPA) do'                                                                                                  + LineEnding +
+          '    Matrix[TPA[i].Y - B.Y1][TPA[i].X - B.X1] := 255;'                                                                          + LineEnding +
+          ''                                                                                                                              + LineEnding +
+          '  Result := Self.Recognize(Matrix, [255], Font, MaxWalk);'                                                                     + LineEnding +
+          'end;'                                                                                                                          + LineEnding +
+          ''                                                                                                                              + LineEnding +
           'function TSimpleOCR.Recognize(Color, Tolerance: Int32; B: TBox; Font: TFontSet; MaxWalk: Int32 = 40): String; overload;'       + LineEnding +
           'var'                                                                                                                           + LineEnding +
           '  TPA: TPointArray;'                                                                                                           + LineEnding +
-          '  Matrix: T2DIntegerArray;'                                                                                                    + LineEnding +
-          '  i: Int32;'                                                                                                                   + LineEnding +
           'begin'                                                                                                                         + LineEnding +
           '  if FindColorsTolerance(TPA, Color, B.X1, B.Y1, B.X2, B.Y2, Tolerance) then'                                                  + LineEnding +
-          '  begin'                                                                                                                       + LineEnding +
-          '    B := GetTPABounds(TPA);'                                                                                                   + LineEnding +
-          '    B.X1 -= 1;'                                                                                                                + LineEnding +
-          '    B.Y1 -= 1;'                                                                                                                + LineEnding +
-          '    B.X2 += 1;'                                                                                                                + LineEnding +
-          '    B.Y2 += 1;'                                                                                                                + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '    SetLength(Matrix, B.Y2 - B.Y1 + 1, B.X2 - B.X1 + 1);'                                                                      + LineEnding +
-          '    for i := 0 to High(TPA) do'                                                                                                + LineEnding +
-          '      Matrix[TPA[i].Y - B.Y1][TPA[i].X - B.X1] := 255;'                                                                        + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '    Result := Self.Recognize(Matrix, [255], Font, MaxWalk);'                                                                   + LineEnding +
-          '  end;'                                                                                                                        + LineEnding +
+          '    Result := Self.Recognize(TPA, Font, MaxWalk);'                                                                             + LineEnding +
           'end;'                                                                                                                          + LineEnding +
           ''                                                                                                                              + LineEnding +
-          'function TSimpleOCR.RecognizeNumbers(B: TBox; Filter: TCompareRules; Font: TFontSet; MaxWalk: Int32 = 40): Int64; overload;'   + LineEnding +
-          'var'                                                                                                                           + LineEnding +
-          '  Text, Numbers: String;'                                                                                                      + LineEnding +
-          '  i: Int32;'                                                                                                                   + LineEnding +
+          'procedure TFontSet.Load(Font: String; Space: Int32 = 4); override;'                                                            + LineEnding +
           'begin'                                                                                                                         + LineEnding +
-          '  Text := Self.Recognize(B, Filter, Font, MaxWalk);'                                                                           + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '  for i := 1 to Length(Text) do'                                                                                               + LineEnding +
-          '    if Text[i] in [' + #39 + '0' + #39 + '..' + #39 + '9' + #39 + '] then'                                                     + LineEnding +
-          '      Numbers := Numbers + Text[i];'                                                                                           + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '  if Length(Numbers) > 0 then'                                                                                                 + LineEnding +
-          '    Result := StrToInt(Numbers);'                                                                                              + LineEnding +
-          'end;'                                                                                                                          + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          'function TSimpleOCR.RecognizeNumbers(Color, Tolerance: Int32; B: TBox; Font: TFontSet; MaxWalk: Int32 = 40): Int64; overload;' + LineEnding +
-          'var'                                                                                                                           + LineEnding +
-          '  Text, Numbers: String;'                                                                                                      + LineEnding +
-          '  i: Int32;'                                                                                                                   + LineEnding +
-          'begin'                                                                                                                         + LineEnding +
-          '  Text := Self.Recognize(Color, Tolerance, B, Font, MaxWalk);'                                                                 + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '  for i := 1 to Length(Text) do'                                                                                               + LineEnding +
-          '    if Text[i] in [' + #39 + '0' + #39 + '..' + #39 + '9' + #39 + '] then'                                                     + LineEnding +
-          '      Numbers := Numbers + Text[i];'                                                                                           + LineEnding +
-          ''                                                                                                                              + LineEnding +
-          '  if Length(Numbers) > 0 then'                                                                                                 + LineEnding +
-          '    Result := StrToInt(Numbers);'                                                                                              + LineEnding +
+          '  if not DirectoryExists(Font) then'                                                                                                + LineEnding +
+          '    raise "Font directory does not exist: " + Font;'                                                                                     + LineEnding +
+          '  inherited();'                                                                                                                + LineEnding +
+          '  if Length(FData) = 0 then'                                                                                                   + LineEnding +
+          '    raise "Failed to load font: " + Font;'                                                                                     + LineEnding +
           'end;'
          );
 

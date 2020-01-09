@@ -173,7 +173,7 @@ begin
 
   FontPath := IncludeTrailingPathDelimiter(FontPath);
   if not DirectoryExists(FontPath) then
-    raise Exception.CreateFmt('SimpleOCR: Font "%s" does not exist', [FontPath]);
+    Exit;
 
   Description.Init_BPP32_B8G8R8_BIO_TTB(0, 0);
 
