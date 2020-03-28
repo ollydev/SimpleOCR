@@ -20,6 +20,8 @@ var
     Code: String;
   end;
 
+  OldMemoryManager: TMemoryManager;
+
 procedure addGlobalFunc(Header: String; Method: Pointer);
 begin
   with SimbaImports do
@@ -99,12 +101,18 @@ end;
 
 procedure SetPluginMemManager(MemoryManager: TMemoryManager); cdecl;
 begin
+  GetMemoryManager(OldMemoryManager);
   SetMemoryManager(MemoryManager);
 end;
 
 procedure SetPluginSimbaMethods(Methods: TSimbaMethods); cdecl;
 begin
   SimbaMethods := Methods;
+end;
+
+procedure OnDetach(Data: Pointer); cdecl;
+begin
+  SetMemoryManager(OldMemoryManager);
 end;
 
 exports GetTypeCount;
@@ -116,4 +124,5 @@ exports GetCode;
 exports GetPluginABIVersion;
 exports SetPluginMemManager;
 exports SetPluginSimbaMethods;
+exports OnDetach;
 

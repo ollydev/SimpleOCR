@@ -15,12 +15,12 @@ uses
 
 procedure TFontSet_Load(const Params: PParamArray); cdecl;
 begin
-  TFontSet(Params^[0]^).Load(String(Params^[1]^), Int32(Params^[2]^));
+  PFontSet(Params^[0])^.Load(PString(Params^[1])^, PInt32(Params^[2])^);
 end;
 
 procedure TSimpleOCR_Recognize(const Params: PParamArray; const Result:Pointer); cdecl;
 begin
-  String(Result^) := TSimpleOCR(Params^[0]^).Recognize(T2DIntegerArray(Params^[1]^), TCompareRules(Params^[2]^), TFontSet(Params^[3]^), Int32(Params^[4]^));
+  PString(Result)^ := PSimpleOCR(Params^[0])^.Recognize(P2DIntegerArray(Params^[1])^, PCompareRules(Params^[2])^, PFontSet(Params^[3])^, PInt32(Params^[4])^);
 end;
 
 initialization
@@ -106,8 +106,8 @@ initialization
           ''                                                                                                                              + LineEnding +
           'procedure TFontSet.Load(Font: String; Space: Int32 = 4); override;'                                                            + LineEnding +
           'begin'                                                                                                                         + LineEnding +
-          '  if not DirectoryExists(Font) then'                                                                                                + LineEnding +
-          '    raise "Font directory does not exist: " + Font;'                                                                                     + LineEnding +
+          '  if not DirectoryExists(Font) then'                                                                                           + LineEnding +
+          '    raise "Font directory does not exist: " + Font;'                                                                           + LineEnding +
           '  inherited();'                                                                                                                + LineEnding +
           '  if Length(FData) = 0 then'                                                                                                   + LineEnding +
           '    raise "Failed to load font: " + Font;'                                                                                     + LineEnding +
