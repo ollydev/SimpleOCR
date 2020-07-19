@@ -1,5 +1,8 @@
 *.lps
 *.dll
 *.so
+*.so.aarch64
+*.bat
+*.dylib
 backup
 lib

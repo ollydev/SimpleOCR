@@ -17,31 +17,34 @@ uses
 type
   PFontChar = ^TFontChar;
   TFontChar = packed record
-    FChar:AnsiChar;
-    FWidth,FHeight:Int32;
-    loaded, hasShadow:LongBool;
+    Character: AnsiChar;
+    Width, Height: Int32;
+    Loaded, HasShadow: Boolean;
     CharacterPoints: TPointArray;
     ShadowPoints: TPointArray;
     BackgroundPoints: TPointArray;
   end;
-  TFontChars = Array of TFontChar;
+  TFontChars = array of TFontChar;
 
   PFontSet = ^TFontSet;
   TFontSet = packed record
     Name: String;
     Data: TFontChars;
     SpaceWidth: Int32;
+    MaxWidth: Int32;
+    MaxHeight: Int32;
 
-    procedure Load(FontPath:String; Space:Int32);
+    procedure Load(FontPath: String; Space: Int32);
   end;
 
   PCompareRules = ^TCompareRules;
   TCompareRules = packed record
-    Color, ColorMaxDiff: Int32; //-1 = any color
-    UseShadow: LongBool;
-    ShadowMaxValue:Int32;
+    Color, ColorMaxDiff: Int32; // -1 = any color
+    UseShadow: Boolean;
+    ShadowMaxValue: Int32;
     Threshold: Int32;
-    ThreshInv: LongBool;
+    ThreshInv: Boolean;
+    MinCharacterMatch: Int32;
   end;
 
   PSimpleOCR = ^TSimpleOCR;
@@ -51,8 +54,8 @@ type
     Width: Int32;
     Height: Int32;
 
-    function CompareChar(Character: TFontChar; Offset: TPoint; Info: TCompareRules): Int32;
-    function Recognize(AClient: T2DIntegerArray; Filter:TCompareRules; FontSet: TFontSet; MaxWalk: Int32): String;
+    function CompareChar(constref Character: TFontChar; constref Offset: TPoint; constref Info: TCompareRules): Int32;
+    function Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; FullSearch: Boolean; MaxWalk: Int32): String;
   end;
 
 implementation
@@ -62,7 +65,7 @@ uses
 
 function FindColor(Data: PRGB32; Color: Int32; Width, Height: Int32): TPointArray;
 var
-  x,y,idx,c:Int32;
+  x,y,idx,c: Int32;
   Target: TRGB32;
 begin
   Target.R := Color and $FF;
@@ -72,9 +75,9 @@ begin
 
   c := 0;
   idx := 0;
-  SetLength(Result, Width*Height);
-  for y:=0 to Height-1 do
-    for x:=0 to Width-1 do
+  SetLength(Result, Width * Height);
+  for y := 0 to Height - 1 do
+    for x := 0 to Width - 1 do
     begin
       if (Data[idx].R = Target.R) and (Data[idx].G = Target.G) and (Data[idx].B = Target.B) then
       begin
@@ -92,7 +95,7 @@ type
 
 procedure ThresholdAdaptive(var Matrix: T2DIntegerArray; Alpha, Beta: Byte; Invert: Boolean; Method: TThreshMethod; C: Integer);
 var
-  i, Size, X, Y, W, H: Int32;
+  I, Size, X, Y, W, H: Int32;
   vMin, vMax, threshold: UInt8;
   Counter: Int64;
   Tab: array [0..256] of UInt8;
@@ -152,18 +155,17 @@ begin
     end;
   end;
 
-  for i := 0 to (Threshold - 1) do Tab[i] := Alpha;
-  for i := Threshold to 255 do Tab[i] := Beta;
+  for I := 0 to (Threshold - 1) do Tab[I] := Alpha;
+  for I := Threshold to 255 do Tab[I] := Beta;
 
   for Y := 0 to H do
     for X := 0 to W do
       Matrix[Y][X] := Tab[Temp[Y][X]];
 end;
 
-//--| TFontSet |--------------------------------------------------------------\\
 procedure TFontSet.Load(FontPath: String; Space: Int32);
 var
-  i: Int32;
+  I: Int32;
   ShadowBounds, CharacterBounds: TBox;
   Image: TLazIntfImage;
   Description: TRawImageDescription;
@@ -182,38 +184,43 @@ begin
 
   SetLength(Data, 256);
 
-  for i := 0 to 255 do
+  for I := 0 to 255 do
   begin
-    Data[i].Loaded := False;
+    Data[I].Loaded := False;
 
-    if FileExists(FontPath + IntToStr(i) + '.bmp') then
+    if FileExists(FontPath + IntToStr(I) + '.bmp') then
     begin
-      Image.LoadFromFile(FontPath + IntToStr(i) + '.bmp');
+      Image.LoadFromFile(FontPath + IntToStr(I) + '.bmp');
 
-      Data[i].FChar := Chr(i);
-      Data[i].CharacterPoints := FindColor(PRGB32(Image.PixelData), $FFFFFF, Image.Width, Image.Height);
-      Data[i].Loaded := Length(Data[i].CharacterPoints) > 0;
+      Data[I].Character := Chr(I);
+      Data[I].CharacterPoints := FindColor(PRGB32(Image.PixelData), $FFFFFF, Image.Width, Image.Height);
+      Data[I].Loaded := Length(Data[I].CharacterPoints) > 0;
 
-      if Data[i].Loaded then
+      if Data[I].Loaded then
       begin
-        Data[i].ShadowPoints := FindColor(PRGB32(Image.PixelData), $0000FF, Image.Width, Image.Height);
-        Data[i].HasShadow := Length(Data[i].ShadowPoints) > 0;
+        Data[I].ShadowPoints := FindColor(PRGB32(Image.PixelData), $0000FF, Image.Width, Image.Height);
+        Data[I].HasShadow := Length(Data[I].ShadowPoints) > 0;
 
-        ShadowBounds := TPABounds(Data[i].ShadowPoints);
-        CharacterBounds := TPABounds(Data[i].CharacterPoints);
+        ShadowBounds := TPABounds(Data[I].ShadowPoints);
+        CharacterBounds := TPABounds(Data[I].CharacterPoints);
 
         if CharacterBounds.X1 > 0 then
         begin
-          OffsetTPA(Data[i].CharacterPoints, -CharacterBounds.X1,0);
-          SortTPAByColumn(Data[i].CharacterPoints);
-          if Data[i].HasShadow then
-            OffsetTPA(Data[i].ShadowPoints, -CharacterBounds.X1, 0);
+          OffsetTPA(Data[I].CharacterPoints, -CharacterBounds.X1,0);
+          SortTPAByColumn(Data[I].CharacterPoints);
+          if Data[I].HasShadow then
+            OffsetTPA(Data[I].ShadowPoints, -CharacterBounds.X1, 0);
 
-          Data[i].BackgroundPoints := InvertTPA(CombineTPA(Data[i].CharacterPoints, Data[i].ShadowPoints));
+          Data[I].BackgroundPoints := InvertTPA(CombineTPA(Data[I].CharacterPoints, Data[I].ShadowPoints));
         end;
 
-        Data[i].FWidth  := Max(CharacterBounds.X2 - CharacterBounds.X1, ShadowBounds.X2 - ShadowBounds.X1) + 1;
-        Data[i].FHeight := Max(CharacterBounds.Y2, ShadowBounds.Y2)+1;
+        Data[I].Width  := Max(CharacterBounds.X2 - CharacterBounds.X1, ShadowBounds.X2 - ShadowBounds.X1) + 1;
+        Data[I].Height := Max(CharacterBounds.Y2, ShadowBounds.Y2) + 1;
+
+        if Data[I].Width > MaxWidth then
+          MaxWidth := Data[I].Width;
+        if Data[I].Height > MaxHeight then
+          MaxHeight := Data[I].Height;
       end;
     end;
   end;
@@ -221,11 +228,11 @@ begin
   Image.Free();
 end;
 
-function TSimpleOCR.CompareChar(Character: TFontChar; Offset: TPoint; Info: TCompareRules): Int32;
+function TSimpleOCR.CompareChar(constref Character: TFontChar; constref Offset: TPoint; constref Info: TCompareRules): Int32;
 var
-  i,Hits,Any, MaxShadow:Int32;
-  First,Color:TRGB32;
-  P:TPoint;
+  I, Hits, Any, MaxShadow: Int32;
+  First, Color: TRGB32;
+  P: TPoint;
 begin
   Hits := 0;
   Any := 0;
@@ -249,36 +256,37 @@ begin
     First := TRGB32(Info.Color);
 
   //count hits for the character
-  for i := 0 to High(Character.CharacterPoints) do
+  for I := 0 to High(Character.CharacterPoints) do
   begin
-    P := Character.CharacterPoints[i];
+    P := Character.CharacterPoints[I];
     P.X += Offset.X;
     P.Y += Offset.Y;
     if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
       Exit(-1);
 
     Color := TRGB32(Client[P.Y, P.X]);
-    if not( Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) <= Info.ColorMaxDiff ) then
+    if not (Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) <= Info.ColorMaxDiff) then
       Exit(-1)
     else
       Inc(Hits, 2);
   end;
 
-  if Hits < Length(Character.CharacterPoints) then Exit(-1); //<50% match.
+  if Hits < Length(Character.CharacterPoints) then
+    Exit(-1); // < 50% match.
 
   if not Info.UseShadow then
   begin
-    //counts hits for the points that should not have equal Color to character
-    //not needed for shadow-fonts
-    for i := 0 to High(Character.BackgroundPoints) do
+    // counts hits for the points that should not have equal Color to character
+    // not needed for shadow-fonts
+    for I := 0 to High(Character.BackgroundPoints) do
     begin
-      P := Character.BackgroundPoints[i];
+      P := Character.BackgroundPoints[I];
       P.X += Offset.X;
       P.Y += Offset.Y;
       if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
         Exit(-1);
 
-      Color := TRGB32(Client[P.Y,P.X]);
+      Color := TRGB32(Client[P.Y, P.X]);
       if Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) > Info.ColorMaxDiff then
         Inc(Any)
       else
@@ -286,15 +294,15 @@ begin
     end;
 
     if (Length(Character.BackgroundPoints) > 0) and (Any <= (Length(Character.BackgroundPoints) div 2)) then
-      Exit(-1) //<=50% match.
+      Exit(-1) // <=50% match.
     else
       Inc(Hits, Any);
   end else
   begin
-    //count hits for font-shadow
-    for i := 0 to High(Character.ShadowPoints) do
+    // count hits for font-shadow
+    for I := 0 to High(Character.ShadowPoints) do
     begin
-      P := Character.ShadowPoints[i];
+      P := Character.ShadowPoints[I];
       P.X += Offset.X;
       P.Y += Offset.Y;
       if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
@@ -302,120 +310,135 @@ begin
 
       Color := TRGB32(Client[P.Y, P.X]);
 
-      if not((Color.R < Info.ShadowMaxValue) and (Color.G < Info.ShadowMaxValue) and (Color.B < Info.ShadowMaxValue)) then
+      if not ((Color.R < Info.ShadowMaxValue) and (Color.G < Info.ShadowMaxValue) and (Color.B < Info.ShadowMaxValue)) then
         Exit(-1)
       else
         Inc(Hits);
     end;
   end;
 
+  if (Hits < Info.MinCharacterMatch) then
+    Exit(-1);
+
   Result := Hits;
 end;
 
-function TSimpleOCR.Recognize(AClient: T2DIntegerArray; Filter: TCompareRules; FontSet: TFontSet; MaxWalk: Int32): String;
-
-  // This makes SimpleOCR a little more dynamic where it doesn't need the perfect bounds that is in line with the fonts glpyhs.
-  // Should be able to just expand the bounds of the text by 1 (to account if your font has a shadow) and SimpleOCR should function well.
-  procedure SearchForCharacter(out offX, offY: Int32);
-  var
-    bestID, bestCount, Hits, X, Y: Int32;
-    i: Int32;
-  begin
-    bestID := -1;
-    bestCount := 0;
-
-    for X := -3 to 3 do  // Maybe add a parameter of how far to search?
-      for Y := -3 to 3 do
-      begin
-        for i := 0 to High(Font.Data) do
-        begin
-          if (not Font.Data[i].Loaded) then
-            Continue;
-
-          Hits := Self.CompareChar(Font.Data[i], Point(X, Y), Filter);
-
-          if Hits > bestCount then
-          begin
-            bestID := i;
-            bestCount := hits;
-
-            offX := X + Font.Data[bestID].FWidth;
-            offY := Y;
-          end;
-        end;
-      end;
-
-    if (bestID > -1) and (bestCount > 0) then
-      Result := Font.Data[bestID].FChar;
-  end;
-
+function TSimpleOCR.Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; FullSearch: Boolean; MaxWalk: Int32): String;
 var
-  Space, i, X, Y: Int32;
-  Hits, bestID, bestCount: Int32;
+  Bounds: TBox;
+  Space, I, X, Y, H: Int32;
+  Hits: Int32;
+  Best: record
+    Hits: Int32;
+    Index: Int32;
+    Y: Int32;
+  end;
+label
+  Found;
 begin
   Result := '';
 
   Self.Font := FontSet;
   Self.Client := AClient;
-  if (Length(Self.Client) = 0) or (Length(Client[0]) = 0) or (Length(Font.Data) = 0) then
+  if (Length(Self.Client) = 0) or (Length(Client[0]) = 0) then
     Exit;
 
   Self.Width := Length(Client[0]);
   Self.Height := Length(Client);
+
+  H := High(Self.Font.Data);
+  if (H < 0) then
+    Exit;
 
   if (Filter.Color = -1) and (not Filter.UseShadow) then
   begin
     ThresholdAdaptive(Self.Client, 0, 255, Filter.ThreshInv, tmMean, Filter.Threshold);
 
     Filter.Color := 255;
+  end else
+    Filter.ColorMaxDiff := Sqr(Filter.ColorMaxDiff);
+
+  // Search for a character to start from this is needed so you don't need absolute perfect bounds
+  Bounds.X1 := -Self.Font.MaxWidth  div 2;
+  Bounds.Y1 := -Self.Font.MaxHeight div 2;
+  Bounds.X2 :=  Self.Font.MaxWidth  div 2;
+  Bounds.Y2 :=  Self.Font.MaxHeight div 2;
+
+  if FullSearch then // Search on the entire client (can be very slow)
+  begin
+    Bounds.X2 := Self.Width  - Bounds.X2;
+    Bounds.Y2 := Self.Height - Bounds.Y2;
   end;
 
-  Filter.ColorMaxDiff := Sqr(Filter.ColorMaxDiff);
-
-  SearchForCharacter(X, Y);
-
-  if (Result <> '') then // InitialRecognize found us a starting character
+  // Needs testing, but seems to work
+  for X := Bounds.X1 to Bounds.X2 do
   begin
-    Space := 0;
+    Best.Hits := 0;
+    Best.Index := -1;
+    Best.Y := 0;
 
-    while (X < Self.Width) and (Space < MaxWalk) do
+    for Y := Bounds.Y1 to Bounds.Y2 do
     begin
-      bestID := -1;
-      bestCount := 0;
-
-      for i := 0 to High(Font.Data) do
+      for I := 0 to H do
       begin
-        if (not Font.Data[i].Loaded) or (Width - X < Font.Data[i].FWidth) then
+        if (not Self.Font.Data[I].Loaded) then
           Continue;
 
-        Hits := Self.CompareChar(Font.Data[i], Point(X, Y), Filter);
-        if Hits > bestCount then
+        Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
+        if (Hits > Best.Hits) then
         begin
-          bestID := i;
-          bestCount := hits;
+          Best.Hits := Hits;
+          Best.Index := I;
+          Best.Y := Y;
         end;
       end;
-
-      if (bestID > -1) and (bestCount > 0) then
-      begin
-        if (Space >= Font.SpaceWidth) then
-          Result += #32;
-
-        Space := 0;
-
-        X += Font.Data[bestID].FWidth;
-        Result += Font.Data[bestID].FChar;
-
-        Continue;
-      end else
-        Space += 1;
-
-      X += 1;
     end;
+
+    if (Best.Hits > 0) then
+      goto Found;
+  end;
+
+  Exit;
+
+  // We found a character to start from
+  Found:
+
+  Space := 0;
+  Y := Best.Y;
+
+  while (X < Self.Width) and (Space < MaxWalk) do
+  begin
+    Best.Hits := 0;
+    Best.Index := -1;
+
+    for I := 0 to H do
+    begin
+      if (not Self.Font.Data[I].Loaded) or (Width - X < Self.Font.Data[I].Width) then
+        Continue;
+
+      Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
+      if (Hits > Best.Hits) then
+      begin
+        Best.Hits := Hits;
+        Best.Index := I;
+      end;
+    end;
+
+    if (Best.Index > -1) then
+    begin
+      if (Space >= Self.Font.SpaceWidth) then
+        Result += #32;
+      Space := 0;
+
+      Result += Self.Font.Data[Best.Index].Character;
+      X += Self.Font.Data[Best.Index].Width;
+
+      Continue;
+    end else
+      Space += 1;
+
+    X += 1;
   end;
 end;
 
 end.
-
-
-

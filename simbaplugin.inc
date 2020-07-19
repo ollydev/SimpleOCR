@@ -4,16 +4,7 @@ type
   PParamArray = ^TParamArray;
   TParamArray = array[Word] of Pointer;
 
-type
-  TSynchronizeMethod = procedure(Data: Pointer); cdecl;
-
-  TSimbaMethods = packed record
-    Synchronize: procedure(Method: TSynchronizeMethod; Data: Pointer = nil); cdecl;
-  end;
-
 var
-  {%H-}SimbaMethods: TSimbaMethods;
-
   SimbaImports: record
     Functions: array of record Header: String; Method: Pointer; end;
     Types: array of record Str: String; Name: String; end;
@@ -105,11 +96,6 @@ begin
   SetMemoryManager(MemoryManager);
 end;
 
-procedure SetPluginSimbaMethods(Methods: TSimbaMethods); cdecl;
-begin
-  SimbaMethods := Methods;
-end;
-
 procedure OnDetach(Data: Pointer); cdecl;
 begin
   SetMemoryManager(OldMemoryManager);
@@ -123,6 +109,4 @@ exports GetCodeLength;
 exports GetCode;
 exports GetPluginABIVersion;
 exports SetPluginMemManager;
-exports SetPluginSimbaMethods;
 exports OnDetach;
-
