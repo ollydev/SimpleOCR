@@ -39,11 +39,12 @@ type
 
   PCompareRules = ^TCompareRules;
   TCompareRules = packed record
-    Color, ColorMaxDiff: Int32; // -1 = any color
+    Color, Tolerance: Int32; // -1 = any color
     UseShadow: Boolean;
     ShadowMaxValue: Int32;
-    Threshold: Int32;
-    ThreshInv: Boolean;
+    Threshold: Boolean;
+    ThresholdAmount: Int32;
+    ThresholdInvert: Boolean;
     MinCharacterMatch: Int32;
   end;
 
@@ -55,13 +56,53 @@ type
     Height: Int32;
 
     function CompareChar(constref Character: TFontChar; constref Offset: TPoint; constref Info: TCompareRules): Int32;
-    function Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; FullSearch: Boolean; MaxWalk: Int32): String;
+    function Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; IsStatic: Boolean; MaxWalk: Int32): String;
   end;
 
 implementation
 
 uses
   graphtype, intfgraphics, lazfileutils, math;
+
+function FindColors(constref Matrix: T2DIntegerArray; Color: TRGB32; Tolerance: Int32): TPointArray;
+var
+  X, Y, Width, Height: Int32;
+  Size, Count: Int32;
+  Test: TRGB32;
+begin
+  Result := Default(TPointArray);
+
+  Height := High(Matrix);
+  if (Height < 0) then
+    Exit;
+  Width := High(Matrix[0]);
+  if (Width < 0) then
+    Exit;
+
+  Count := 0;
+  Size := 1024;
+  SetLength(Result, Size);
+
+  for Y := 0 to Height do
+    for X := 0 to Width do
+    begin
+      Test := TRGB32(Matrix[Y][X]);
+
+      if Sqr(Test.R - Color.R) + Sqr(Test.B - Color.B) + Sqr(Test.G - Color.G) <= Tolerance then
+      begin
+        Result[Count] := Point(X, Y);
+        Inc(Count);
+
+        if (Count = Size) then
+        begin
+          Size *= 2;
+          SetLength(Result, Size);
+        end;
+      end;
+    end;
+
+  SetLength(Result, Count);
+end;
 
 function FindColor(Data: PRGB32; Color: Int32; Width, Height: Int32): TPointArray;
 var
@@ -90,13 +131,10 @@ begin
   SetLength(Result, c);
 end;
 
-type
-  TThreshMethod = (tmMean, tmMinMax);
-
-procedure ThresholdAdaptive(var Matrix: T2DIntegerArray; Alpha, Beta: Byte; Invert: Boolean; Method: TThreshMethod; C: Integer);
+procedure ThresholdAdaptive(var Matrix: T2DIntegerArray; Alpha, Beta: Byte; Invert: Boolean; C: Integer);
 var
   I, Size, X, Y, W, H: Int32;
-  vMin, vMax, threshold: UInt8;
+  Threshold: UInt8;
   Counter: Int64;
   Tab: array [0..256] of UInt8;
   Temp: T2DIntegerArray;
@@ -116,44 +154,17 @@ begin
   //Finding the threshold - While at it set blue-scale to the RGB mean (needed for later).
   Threshold := 0;
 
-  case Method of
-    //Find the Arithmetic Mean / Average.
-    tmMean:
+  Counter := 0;
+  for Y := 0 to H do
+    for X := 0 to W do
     begin
-      Counter := 0;
-      for Y := 0 to H do
-        for X := 0 to W do
-        begin
-          with TRGB32(Matrix[Y][X]) do
-            Temp[Y][X] := (B + G + R) div 3;
+      with TRGB32(Matrix[Y][X]) do
+        Temp[Y][X] := (B + G + R) div 3;
 
-          Counter += Temp[Y][X];
-        end;
-
-      Threshold := (Counter div Size) + C;
+      Counter += Temp[Y][X];
     end;
 
-    tmMinMax:
-    begin
-      vMin := 255;
-      vMax := 0;
-
-      for Y := 0 to H do
-        for X := 0 to W do
-        begin
-          with TRGB32(Matrix[Y][X]) do
-            Temp[Y][X] := (B + G + R) div 3;
-
-          if Temp[Y][X] < vMin then
-            vMin := Temp[y][X]
-          else
-          if Temp[Y][X] > vMax then
-            vMax := Temp[Y][X];
-        end;
-
-      Threshold := ((vMax + Int32(vMin)) shr 1) + C;
-    end;
-  end;
+  Threshold := (Counter div Size) + C;
 
   for I := 0 to (Threshold - 1) do Tab[I] := Alpha;
   for I := Threshold to 255 do Tab[I] := Beta;
@@ -265,7 +276,7 @@ begin
       Exit(-1);
 
     Color := TRGB32(Client[P.Y, P.X]);
-    if not (Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) <= Info.ColorMaxDiff) then
+    if not (Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) <= Info.Tolerance) then
       Exit(-1)
     else
       Inc(Hits, 2);
@@ -287,7 +298,7 @@ begin
         Exit(-1);
 
       Color := TRGB32(Client[P.Y, P.X]);
-      if Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) > Info.ColorMaxDiff then
+      if Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) > Info.Tolerance then
         Inc(Any)
       else
         Dec(Hits);
@@ -323,7 +334,55 @@ begin
   Result := Hits;
 end;
 
-function TSimpleOCR.Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; FullSearch: Boolean; MaxWalk: Int32): String;
+function TSimpleOCR.Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; IsStatic: Boolean; MaxWalk: Int32): String;
+
+  function Search(constref Bounds: TBox; out BestX, BestY: Int32; Recognize: Boolean): Boolean;
+  var
+    X, Y, I, H: Int32;
+    Hits: Int32;
+    Best: record
+      Hits: Int32;
+      X, Y: Int32;
+    end;
+  begin
+    H := High(Self.Font.Data);
+
+    Best.Hits := 0;
+    Best.X := 0;
+    Best.Y := 0;
+
+    for X := Bounds.X1 to Bounds.X2 do
+    begin
+      if not Recognize then
+        Best.Hits := 0;
+
+      for Y := Bounds.Y1 to Bounds.Y2 do
+      begin
+        for I := 0 to H do
+        begin
+          if (not Self.Font.Data[I].Loaded) then
+            Continue;
+
+          Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
+          if (Hits > Best.Hits) then
+          begin
+            Best.Hits := Hits;
+            Best.X := X;
+            Best.Y := Y;
+          end;
+        end;
+      end;
+
+      if (not Recognize) and (Best.Hits > 0) then
+        Break;
+    end;
+
+    BestX := Best.X;
+    BestY := Best.Y;
+
+    Result := Best.Hits > 0;
+  end;
+
 var
   Bounds: TBox;
   Space, I, X, Y, H: Int32;
@@ -331,10 +390,8 @@ var
   Best: record
     Hits: Int32;
     Index: Int32;
-    Y: Int32;
+    X, Y: Int32;
   end;
-label
-  Found;
 begin
   Result := '';
 
@@ -346,65 +403,58 @@ begin
   Self.Width := Length(Client[0]);
   Self.Height := Length(Client);
 
+  X := 0;
+  Y := 0;
   H := High(Self.Font.Data);
   if (H < 0) then
     Exit;
 
-  if (Filter.Color = -1) and (not Filter.UseShadow) then
+  if Filter.Threshold then
   begin
-    ThresholdAdaptive(Self.Client, 0, 255, Filter.ThreshInv, tmMean, Filter.Threshold);
-
     Filter.Color := 255;
-  end else
-    Filter.ColorMaxDiff := Sqr(Filter.ColorMaxDiff);
 
-  // Search for a character to start from this is needed so you don't need absolute perfect bounds
-  Bounds.X1 := -Self.Font.MaxWidth  div 2;
-  Bounds.Y1 := -Self.Font.MaxHeight div 2;
-  Bounds.X2 :=  Self.Font.MaxWidth  div 2;
-  Bounds.Y2 :=  Self.Font.MaxHeight div 2;
-
-  if FullSearch then // Search on the entire client (can be very slow)
-  begin
-    Bounds.X2 := Self.Width  - Bounds.X2;
-    Bounds.Y2 := Self.Height - Bounds.Y2;
+    ThresholdAdaptive(Self.Client, 0, Filter.Color, Filter.ThresholdInvert, Filter.ThresholdAmount);
   end;
 
-  // Needs testing, but seems to work
-  for X := Bounds.X1 to Bounds.X2 do
+  if (Filter.Tolerance = 0) then
+    Filter.Tolerance := Sqr(1)
+  else
+    Filter.Tolerance := Sqr(Filter.Tolerance);
+
+  if not IsStatic then
   begin
-    Best.Hits := 0;
-    Best.Index := -1;
-    Best.Y := 0;
-
-    for Y := Bounds.Y1 to Bounds.Y2 do
+    if (Filter.Color > -1) then
     begin
-      for I := 0 to H do
-      begin
-        if (not Self.Font.Data[I].Loaded) then
-          Continue;
-
-        Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
-        if (Hits > Best.Hits) then
-        begin
-          Best.Hits := Hits;
-          Best.Index := I;
-          Best.Y := Y;
-        end;
-      end;
+      Bounds := TPABounds(FindColors(Self.Client, TRGB32(Filter.Color), Filter.Tolerance));
+      Bounds.X1 -= (FontSet.MaxWidth  div 3);
+      Bounds.Y1 -= (FontSet.MaxHeight div 3);
+      Bounds.X2 += (FontSet.MaxWidth  div 3);
+      Bounds.Y2 += (FontSet.MaxHeight div 3);
+    end
+    else
+    begin
+      // OCR entire client (slow)
+      Bounds.X1 := -Self.Font.MaxWidth  div 3;
+      Bounds.Y1 := -Self.Font.MaxHeight div 3;
+      Bounds.X2 := Self.Width  - (Self.Font.MaxWidth  div 3);
+      Bounds.Y2 := Self.Height - (Self.Font.MaxHeight div 3);
     end;
 
-    if (Best.Hits > 0) then
-      goto Found;
+    // Find something
+    if not Search(Bounds, X, Y, False) then
+      Exit;
+
+    // Find best character around where something was found
+    Bounds.X1 := X - (FontSet.MaxWidth  div 3);
+    Bounds.Y1 := Y - (FontSet.MaxHeight div 3);
+    Bounds.X2 := X + (FontSet.MaxWidth  div 3);
+    Bounds.Y2 := Y + (FontSet.MaxHeight div 3);
+
+    if not Search(Bounds, X, Y, True) then
+      Exit;
   end;
 
-  Exit;
-
-  // We found a character to start from
-  Found:
-
   Space := 0;
-  Y := Best.Y;
 
   while (X < Self.Width) and (Space < MaxWalk) do
   begin

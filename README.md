@@ -1,46 +1,53 @@
-# OSR-OCR
-Simple OCR engine to read text at static coordinates in "RuneScape"
+## SimpleOCR
 
-------
+SimpleOCR is a Simba plugin for reading text in Old School RuneScape. 
 
-Usage:
-------
-The following line should be added to your script, or include, it's used to keep the OCR engine up to date with the scripts client.
+Results: 
+
+![Example](docs/uptext-1.png)
+```
+Recognized: Talk-to Grand Exchange Clerk / 262 more options
+````
+
+![Example](docs/uptext-2.png)
+```
+Recognized: Climb-up Ladder / 2 more option
+```
+
+-----
+
+## Exports
+
+```pascal 
+procedure TFontSet.Load(Font: String; Space: Int32 = 4);
+function TSimpleOCR.Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; IsStatic: Boolean = False; MaxWalk: Int32 = 40): String;
+function TSimpleOCR.Recognize(B: TBox; Filter: TCompareRules; constref Font: TFontSet; IsStatic: Boolean = False; MaxWalk: Int32 = 40): AnsiString;
+```
+
+-----
+
+`Filter` parameter:
 
 ```pascal
-function TSimpleOCR.Recognize(B:TBox; Filter:TCompareRules; MaxWalk:Int32=40): String; override;
-begin
-  Self.ClientID := ExportImageTarget();
-  Result := Inherited(B, Filter, MaxWalk);
+TCompareRules = packed record 
+  Color, Tolerance: Int32;  // Color and tolerance. Color can be -1 to match any color.
+  UseShadow: Boolean;       // If the fontset has a shadow, it can be used to improve recognition.
+  ShadowMaxValue: Int32;    // Max brightness of shadow, Shadows are black so this is often low.
+  Threshold: Boolean;       // Threshold the image? If so all above fields are ignored.
+  ThresholdAmount: Int32;   // Threshold amount.
+  ThresholdInvert: Boolean; // Threshold invert?
+  MinCharacterMatch: Int32; // Minimum hits required to match a character. Useful to remove smaller characters (like dots) that are often misread.
 end;
 ```
 
-Now it's just a matter of loading up your font, and start recognizing text:
-```pascal
-var 
-  OCR:TSimpleOCR;
-  str:String;
-  filterRules:TCompareRules = [-1, 85, True, 55]; (* any color, 85 tolerance, Use shadow!, shadow max brightness: 55 *) 
-begin
-  OCR.Init(FontPath+'UpCharsEx');
-  str := OCR.Recognize(IntToBox(7,7,500,30), filterRules);
-  WriteLn(str);
-end;
-```
-Keep in mind that the engine expects pixel precision, so, `TBox.x1`, and specially `TBox.y1` should be set perferectly. You will get the point if you tinker about with it ;)
+-----
 
--------
+`IsStatic` parameter:
 
-A useful thing to familiarize yourself with is `TCompareRules`.
-```pascal
-  TCompareRules = packed record
-    Color, ColorMaxDiff: Int32; //color and tolerance
-    
-    UseShadow: LongBool;        //rely on shadow? if yes then we can safely ignore colors if wanted (color = -1)
-    ShadowMaxValue:Int32;       //max brightness of the shadow (0..255)
-    
-    Threshold: Int32;           //we can use threshold instead tho to get it working with most colors.
-    ThreshInv: LongBool;        //invert the threshold?
-  end;
-```
-Notice that if the color is set to `-1` either shadow, or Threshold must be defined.
+If the starting position (X1,Y1) of the text never changes the text is static which greatly increases accuracy and speed. If this is the case you must pass the *pixel perfect* bounds of the text you want to read.
+
+-----
+
+`MaxWalk` parameter:
+
+How far the OCR looks on the X axis before giving up. By default this is `40` so if no characaters are matched in 40 pixels the function finishes.

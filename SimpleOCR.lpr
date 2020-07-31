@@ -44,11 +44,12 @@ initialization
                 'TFontSet');
 
   addGlobalType('packed record'                    + LineEnding +
-                '  Color, ColorMaxDiff: Int32;'    + LineEnding +
+                '  Color, Tolerance: Int32;'       + LineEnding +
                 '  UseShadow: Boolean;'            + LineEnding +
-                '  ShadowMaxValue:Int32;'          + LineEnding +
-                '  Threshold: Int32;'              + LineEnding +
-                '  ThreshInv: Boolean;'            + LineEnding +
+                '  ShadowMaxValue: Int32;'          + LineEnding +
+                '  Threshold: Boolean;'            + LineEnding +
+                '  ThresholdAmount: Int32;'        + LineEnding +
+                '  ThresholdInvert: Boolean;'      + LineEnding +
                 '  MinCharacterMatch: Int32;'      + LineEnding +
                 'end;',
                 'TCompareRules');
@@ -62,46 +63,26 @@ initialization
                 'TSimpleOCR');
 
   addGlobalFunc('procedure TFontSet.Load(Font: String; Space: Int32 = 4); native;', @TFontSet_Load);
-  addGlobalFunc('function TSimpleOCR.Recognize(constref Client: T2DIntegerArray; constref Filter: TCompareRules; constref Font: TFontSet; FullSearch: Boolean = False; MaxWalk: Int32 = 40): String; overload; native;', @TSimpleOCR_Recognize);
+  addGlobalFunc('function TSimpleOCR.Recognize(constref Client: T2DIntegerArray; constref Filter: TCompareRules; constref Font: TFontSet; IsStatic: Boolean = False; MaxWalk: Int32 = 40): String; overload; native;', @TSimpleOCR_Recognize);
 
-  addCode('function TSimpleOCR.Recognize(B: TBox; Filter: TCompareRules; constref Font: TFontSet; FullSearch: Boolean = False; MaxWalk: Int32 = 40): AnsiString; overload;' + LineEnding +
-          'var'                                                                                                                                                             + LineEnding +
-          '  Matrix: T2DIntegerArray;'                                                                                                                                      + LineEnding +
+  addCode('function TSimpleOCR.Recognize(B: TBox; Filter: TCompareRules; constref Font: TFontSet; IsStatic: Boolean = False; MaxWalk: Int32 = 40): AnsiString; overload;'   + LineEnding +
           'begin'                                                                                                                                                           + LineEnding +
-          '  Matrix := GetColorsMatrix(B.X1, B.Y1, B.X2, B.Y2);'                                                                                                            + LineEnding +
-          ''                                                                                                                                                                + LineEnding +
-          '  if Filter.Color <> -1 then'                                                                                                                                    + LineEnding +
-          '    with TRGB32(Filter.Color) do'                                                                                                                                + LineEnding +
-          '      Filter.Color := R or G shl 8 or B shl 16;'                                                                                                                 + LineEnding +
-          ''                                                                                                                                                                + LineEnding +
-          '  Result := Self.Recognize(Matrix, Filter, Font, FullSearch, MaxWalk);'                                                                                          + LineEnding +
+          '  Result := Self.Recognize(GetColorsMatrix(B.X1, B.Y1, B.X2, B.Y2), Filter, Font, IsStatic, MaxWalk);'                                                           + LineEnding +
           'end;'                                                                                                                                                            + LineEnding +
           ''                                                                                                                                                                + LineEnding +
-          'function TSimpleOCR.Recognize(TPA: TPointArray; constref Font: TFontSet; MaxWalk: Int32 = 40): String; overload;'                                                + LineEnding +
+          'function TSimpleOCR.Recognize(constref TPA: TPointArray; constref Font: TFontSet; MaxWalk: Int32 = 40): String; overload;'                                       + LineEnding +
           'var'                                                                                                                                                             + LineEnding +
           '  Matrix: T2DIntegerArray;'                                                                                                                                      + LineEnding +
           '  B: TBox;'                                                                                                                                                      + LineEnding +
-          '  i: Int32;'                                                                                                                                                     + LineEnding +
+          '  I: Int32;'                                                                                                                                                     + LineEnding +
           'begin'                                                                                                                                                           + LineEnding +
           '  B := GetTPABounds(TPA);'                                                                                                                                       + LineEnding +
-          '  B.X1 -= 1;'                                                                                                                                                    + LineEnding +
-          '  B.Y1 -= 1;'                                                                                                                                                    + LineEnding +
-          '  B.X2 += 1;'                                                                                                                                                    + LineEnding +
-          '  B.Y2 += 1;'                                                                                                                                                    + LineEnding +
           ''                                                                                                                                                                + LineEnding +
           '  SetLength(Matrix, B.Y2 - B.Y1 + 1, B.X2 - B.X1 + 1);'                                                                                                          + LineEnding +
-          '  for i := 0 to High(TPA) do'                                                                                                                                    + LineEnding +
-          '    Matrix[TPA[i].Y - B.Y1][TPA[i].X - B.X1] := 255;'                                                                                                            + LineEnding +
+          '  for I := 0 to High(TPA) do'                                                                                                                                    + LineEnding +
+          '    Matrix[TPA[I].Y - B.Y1][TPA[I].X - B.X1] := 255;'                                                                                                            + LineEnding +
           ''                                                                                                                                                                + LineEnding +
           '  Result := Self.Recognize(Matrix, [255], Font, False, MaxWalk);'                                                                                                + LineEnding +
-          'end;'                                                                                                                                                            + LineEnding +
-          ''                                                                                                                                                                + LineEnding +
-          'function TSimpleOCR.Recognize(Color, Tolerance: Int32; B: TBox; constref Font: TFontSet; MaxWalk: Int32 = 40): String; overload;'                                + LineEnding +
-          'var'                                                                                                                                                             + LineEnding +
-          '  TPA: TPointArray;'                                                                                                                                             + LineEnding +
-          'begin'                                                                                                                                                           + LineEnding +
-          '  if FindColorsTolerance(TPA, Color, B.X1, B.Y1, B.X2, B.Y2, Tolerance) then'                                                                                    + LineEnding +
-          '    Result := Self.Recognize(TPA, Font, MaxWalk);'                                                                                                               + LineEnding +
           'end;'                                                                                                                                                            + LineEnding +
           ''                                                                                                                                                                + LineEnding +
           'procedure TFontSet.Load(Font: String; Space: Int32 = 4); override;'                                                                                              + LineEnding +
