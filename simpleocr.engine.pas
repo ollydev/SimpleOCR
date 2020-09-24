@@ -335,57 +335,11 @@ begin
 end;
 
 function TSimpleOCR.Recognize(constref AClient: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; IsStatic: Boolean; MaxWalk: Int32): String;
-
-  function Search(constref Bounds: TBox; out BestX, BestY: Int32; Recognize: Boolean): Boolean;
-  var
-    X, Y, I, H: Int32;
-    Hits: Int32;
-    Best: record
-      Hits: Int32;
-      X, Y: Int32;
-    end;
-  begin
-    H := High(Self.Font.Data);
-
-    Best.Hits := 0;
-    Best.X := 0;
-    Best.Y := 0;
-
-    for X := Bounds.X1 to Bounds.X2 do
-    begin
-      if not Recognize then
-        Best.Hits := 0;
-
-      for Y := Bounds.Y1 to Bounds.Y2 do
-      begin
-        for I := 0 to H do
-        begin
-          if (not Self.Font.Data[I].Loaded) then
-            Continue;
-
-          Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
-          if (Hits > Best.Hits) then
-          begin
-            Best.Hits := Hits;
-            Best.X := X;
-            Best.Y := Y;
-          end;
-        end;
-      end;
-
-      if (not Recognize) and (Best.Hits > 0) then
-        Break;
-    end;
-
-    BestX := Best.X;
-    BestY := Best.Y;
-
-    Result := Best.Hits > 0;
-  end;
-
 var
   Bounds: TBox;
   Space, I, X, Y, H: Int32;
+  TextHits, BestTextHits: Int32;
+  Text: String;
   Hits: Int32;
   Best: record
     Hits: Int32;
@@ -403,8 +357,6 @@ begin
   Self.Width := Length(Client[0]);
   Self.Height := Length(Client);
 
-  X := 0;
-  Y := 0;
   H := High(Self.Font.Data);
   if (H < 0) then
     Exit;
@@ -421,8 +373,14 @@ begin
   else
     Filter.Tolerance := Sqr(Filter.Tolerance);
 
+  Bounds.X1 := 0;
+  Bounds.Y1 := 0;
+  Bounds.X2 := Self.Width - 1;
+  Bounds.Y2 := Self.Height - 1;
+
   if not IsStatic then
   begin
+    // Speed by cropping bounds
     if (Filter.Color > -1) then
     begin
       Bounds := TPABounds(FindColors(Self.Client, TRGB32(Filter.Color), Filter.Tolerance));
@@ -430,64 +388,65 @@ begin
       Bounds.Y1 -= (FontSet.MaxHeight div 3);
       Bounds.X2 += (FontSet.MaxWidth  div 3);
       Bounds.Y2 += (FontSet.MaxHeight div 3);
-    end
-    else
-    begin
-      // OCR entire client (slow)
-      Bounds.X1 := -Self.Font.MaxWidth  div 3;
-      Bounds.Y1 := -Self.Font.MaxHeight div 3;
-      Bounds.X2 := Self.Width  - (Self.Font.MaxWidth  div 3);
-      Bounds.Y2 := Self.Height - (Self.Font.MaxHeight div 3);
     end;
 
-    // Find something
-    if not Search(Bounds, X, Y, False) then
-      Exit;
-
-    // Find best character around where something was found
-    Bounds.X1 := X - (FontSet.MaxWidth  div 3);
-    Bounds.Y1 := Y - (FontSet.MaxHeight div 3);
-    Bounds.X2 := X + (FontSet.MaxWidth  div 3);
-    Bounds.Y2 := Y + (FontSet.MaxHeight div 3);
-
-    if not Search(Bounds, X, Y, True) then
-      Exit;
+    MaxWalk := $FFFFFF;
   end;
 
-  Space := 0;
+  BestTextHits := 0;
 
-  while (X < Self.Width) and (Space < MaxWalk) do
+  for Y := Bounds.Y1 to Bounds.Y2 do
   begin
-    Best.Hits := 0;
-    Best.Index := -1;
+    Text := '';
+    TextHits := 0;
 
-    for I := 0 to H do
+    Space := 0;
+    X := Bounds.X1;
+
+    while (X < Bounds.X2) and (Space < MaxWalk) do
     begin
-      if (not Self.Font.Data[I].Loaded) or (Width - X < Self.Font.Data[I].Width) then
-        Continue;
+      Best.Hits := 0;
+      Best.Index := -1;
 
-      Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
-      if (Hits > Best.Hits) then
+      for I := 0 to H do
       begin
-        Best.Hits := Hits;
-        Best.Index := I;
+        if (not Self.Font.Data[I].Loaded) or (Width - X < Self.Font.Data[I].Width) then
+          Continue;
+
+        Hits := Self.CompareChar(Self.Font.Data[I], Point(X, Y), Filter);
+        if (Hits > Best.Hits) then
+        begin
+          Best.Hits := Hits;
+          Best.Index := I;
+        end;
       end;
+
+      if (Best.Index > -1) then
+      begin
+        if (Text <> '') and (Space >= Self.Font.SpaceWidth) then
+          Text += #32;
+        Space := 0;
+
+        TextHits += Best.Hits;
+        Text += Self.Font.Data[Best.Index].Character;
+        X += Self.Font.Data[Best.Index].Width;
+
+        Continue;
+      end else
+        Space += 1;
+
+      X += 1;
     end;
 
-    if (Best.Index > -1) then
+    if (TextHits > BestTextHits) then
     begin
-      if (Space >= Self.Font.SpaceWidth) then
-        Result += #32;
-      Space := 0;
+      BestTextHits := TextHits;
 
-      Result += Self.Font.Data[Best.Index].Character;
-      X += Self.Font.Data[Best.Index].Width;
+      Result := Text;
+    end;
 
-      Continue;
-    end else
-      Space += 1;
-
-    X += 1;
+    if IsStatic then
+      Break;
   end;
 end;
 
