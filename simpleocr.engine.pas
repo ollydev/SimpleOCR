@@ -17,7 +17,7 @@ uses
 type
   PFontChar = ^TFontChar;
   TFontChar = packed record
-    Character: AnsiChar;
+    Character: Char;
     Width, Height: Int32;
     Loaded, HasShadow: Boolean;
     CharacterPoints: TPointArray;
