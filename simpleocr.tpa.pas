@@ -1,6 +1,6 @@
 unit simpleocr.tpa;
 {==============================================================================]
-  Copyright (c) 2019, Jarl `slacky` Holta
+  Copyright (c) 2021, Jarl `slacky` Holta
   Project: SimpleOCR
   Project URL: https://github.com/slackydev/SimpleOCR
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
@@ -23,6 +23,7 @@ function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX,SY:Integer);
 procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right:Int32);
 procedure SortTPAbyColumn(var Arr: TPointArray);
+function Mode(Self: TIntegerArray): Int32;
 
 implementation 
 
@@ -84,7 +85,7 @@ end;
 {*
  Returns the points not in the TPA within the area the TPA covers.
 *}
-function InvertTPA(const TPA:TPointArray): TPointArray;
+function InvertTPA(const TPA: TPointArray): TPointArray;
 var
   Matrix: T2DIntegerArray;
   i,h,x,y: Integer;
@@ -129,8 +130,7 @@ begin;
 end;
 
 //Fast TPointArray sorting for small arrays.
-procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left,
-  Right: Int32);
+procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left, Right: Int32);
 var i, j:Int32;
 begin
   for i := Left to Right do
@@ -156,6 +156,61 @@ begin
     Weight[i] := (Arr[i].x * (Area.Y2-Area.Y1) + Arr[i].y);
   InsSortTPA(Arr, Weight, 0, Hi);
   SetLength(Weight, 0);
+end;
+
+procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer) ;
+var
+  Lo, Hi, Pivot, T: Integer;
+begin
+  Lo := iLo;
+  Hi := iHi;
+  Pivot := A[(Lo + Hi) div 2];
+  repeat
+    while A[Lo] < Pivot do Inc(Lo) ;
+    while A[Hi] > Pivot do Dec(Hi) ;
+    if Lo <= Hi then
+    begin
+      T := A[Lo];
+      A[Lo] := A[Hi];
+      A[Hi] := T;
+      Inc(Lo) ;
+      Dec(Hi) ;
+    end;
+  until Lo > Hi;
+  if Hi > iLo then QuickSort(A, iLo, Hi) ;
+  if Lo < iHi then QuickSort(A, Lo, iHi) ;
+end;
+
+function Mode(Self: TIntegerArray): Int32;
+var
+  i,hits,best: Int32;
+  cur: Int32;
+begin
+  Result := 0;
+
+  if Length(Self) > 0 then
+  begin
+    QuickSort(Self, Low(Self), High(Self));
+    cur := self[0];
+    hits := 1;
+    best := 0;
+    for i:=1 to High(self) do
+    begin
+      if (self[i] <> cur) then
+      begin
+        if (hits > best) then
+        begin
+          best := hits;
+          Result := cur;
+        end;
+        hits := 0;
+        cur := self[I];
+      end;
+      Inc(hits);
+    end;
+    if (hits > best) then
+      Result := cur;
+  end;
 end;
 
 end.

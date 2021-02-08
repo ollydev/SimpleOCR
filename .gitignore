@@ -6,3 +6,4 @@
 *.dylib
 backup
 lib
+*.res
