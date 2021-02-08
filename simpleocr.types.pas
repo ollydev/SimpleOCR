@@ -1,6 +1,6 @@
 unit simpleocr.types;
 {==============================================================================]
-  Copyright (c) 2019, Jarl `slacky` Holta
+  Copyright (c) 2021, Jarl `slacky` Holta
   Project: SimpleOCR
   Project URL: https://github.com/slackydev/SimpleOCR
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
