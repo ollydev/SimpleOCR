@@ -6,7 +6,7 @@ unit simpleocr.engine;
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
 [==============================================================================}
 {$mode objfpc}{$H+}
-{$modeswitch advancedrecords}
+{$i simpleocr.inc}
 
 interface
 
@@ -15,29 +15,31 @@ uses
   simpleocr.tpa, simpleocr.types;
 
 const
-  FONTSET_START = 32;
-  FONTSET_END   = 126;
-  FONTSET_COUNT = FONTSET_END - FONTSET_START + 1;
+  FONTSET_START = #32;
+  FONTSET_END   = #126;
+  FONTSET_RANGE = [#32..#126];
+
+  FONTSET_SPACE = #32;
 
 type
-  PFontChar = ^TFontChar;
-  TFontChar = packed record
-    Character: Char;
+  PFontChar = ^TFontCharacter;
+  TFontCharacter = packed record
     ImageWidth, ImageHeight: Int32;
     Width, Height: Int32;
-    HasShadow: Boolean;
     CharacterBounds: TBox;
     CharacterPoints: TPointArray;
+    CharacterPointsLength: Int32;
     ShadowPoints: TPointArray;
     BackgroundPoints: TPointArray;
+    BackgroundPointsLength: Int32;
+    TotalBounds: TBox;
+    Value: Char;
   end;
-  TFontChars = array of TFontChar;
 
   PFontSet = ^TFontSet;
   TFontSet = packed record
     Name: String;
-    Data: TFontChars;
-    Count: Int32;
+    Characters: array[FONTSET_START..FONTSET_END] of TFontCharacter;
     SpaceWidth: Int32;
     MaxWidth: Int32;
     MaxHeight: Int32;
@@ -45,255 +47,328 @@ type
     procedure Load(FontPath: String; Space: Int32);
   end;
 
+  EOCRRule = (
+    ANY_COLOR,
+    COLOR,
+    THRESHOLD,
+    SHADOW
+  );
+
   PCompareRules = ^TCompareRules;
   TCompareRules = packed record
-    Color, Tolerance: Int32; // -1 = any color
-    UseShadow: Boolean;
-    ShadowMaxValue: Int32;
-    Threshold: Boolean;
-    ThresholdAmount: Int32;
-    ThresholdInvert: Boolean;
-    UseShadowForColor: Boolean;
-    MinCharacterMatch: Int32;
+    Rule: EOCRRule;
+
+    AnyColorRule: packed record
+      MaxShadowValue: Int32;
+      Tolerance: Int32;
+    end;
+
+    ColorRule: packed record
+      Colors: array of packed record
+        Color: Int32;
+        Tolerance: Int32;
+      end;
+    end;
+
+    ThresholdRule: packed record
+      Amount: Int32;
+      Invert: Boolean;
+    end;
+
+    ShadowRule: packed record
+      MaxShadowValue: Int32;
+    end;
+
+    MinCharacterMatch: Char;
   end;
 
   PSimpleOCR = ^TSimpleOCR;
   TSimpleOCR = packed record
-  private
-    Font: TFontSet;
-    Client: T2DIntegerArray;
-    Width: Int32;
-    Height: Int32;
-
-    function RecognizeChar(constref Character: TFontChar; constref Offset: TPoint; constref Filter: TCompareRules): Int32;
-    function RecognizeStatic(Bounds: TBox; constref Filter: TCompareRules; constref MaxWalk: Int32; out Hits: Int32): String;
-    function RecognizeDynamic(Bounds: TBox; constref Filter: TCompareRules): String;
   public
-    function DrawText(constref Text: String; constref FontSet: TFontSet): T2DIntegerArray;
+  type
+    TRecognizeCharFunction = function(var Self: TSimpleOCR; const Offset: TPoint; out FontChar: TFontCharacter): Int32;
+  private
+    FFont: TFontSet;
+    FClient: T2DIntegerArray;
+    FWidth: Int32;
+    FHeight: Int32;
+    FSearchArea: TBox;
+    FCompareRules: TCompareRules;
 
-    function LocateText(constref Matrix: T2DIntegerArray; constref Text: String; constref FontSet: TFontSet; constref Filter: TCompareRules; out Bounds: TBox): Single; overload;
-    function LocateText(constref Matrix: T2DIntegerArray; constref Text: String; constref FontSet: TFontSet; constref Filter: TCompareRules; constref MinMatch: Single = 1): Boolean; overload;
+    function Init(const Matrix: T2DIntegerArray; const Font: TFontSet; const Filter: TCompareRules): Boolean;
 
-    function Recognize(constref Matrix: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; constref IsStatic: Boolean; constref MaxWalk: Int32): String;
+    function InClient(const Character: TFontCharacter; const Offset: TPoint): Boolean;
+
+    function RecognizeRow(const RecognizeCharFunction: TRecognizeCharFunction; Bounds: TBox; const MaxWalk: Int32; out TextHits: Int32; out TextBounds: TBox): String;
+  public
+    function DrawText(const Text: String; const Font: TFontSet): T2DIntegerArray;
+
+    function LocateText(const Matrix: T2DIntegerArray; const Text: String; const Font: TFontSet; const Filter: TCompareRules; out Bounds: TBox): Single; overload;
+
+    function Recognize(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet): String;
+    function RecognizeStatic(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet; const MaxWalk: Int32): String;
+    function RecognizeMulti(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet; out TextBounds: TBoxArray): TStringArray;
   end;
 
 implementation
 
 uses
-  graphtype, intfgraphics, lazfileutils;
+  graphtype, intfgraphics, graphics, lazfileutils, math,
+  simpleocr.filters;
 
-function MatrixFromPointer(Data: PRGB32; Width, Height: Int32): T2DIntegerArray;
-var
-  X, Y: Int32;
-begin
-  SetLength(Result, Height, Width);
-  for Y := 0 to Height-1 do
-    for X := 0 to Width-1 do
-      Result[Y][X] := Data[Y*Width+X].R or Data[Y*Width+X].G shl 8 or Data[Y*Width+X].B shl 16;
-end;
+function RecognizeChar(var Self: TSimpleOCR; const Offset: TPoint; out FoundCharacter: TFontCharacter): Int32;
 
-function FindColors(constref Matrix: T2DIntegerArray; Color, Tolerance: Int32): TPointArray;
-var
-  X, Y, Width, Height: Int32;
-  Size, Count: Int32;
-  Pixel: TRGB32;
-  R, G, B: UInt8;
-begin
-  Result := Default(TPointArray);
-  if (Length(Matrix) = 0) or (Length(Matrix[0]) = 0) then
-    Exit;
-
-  Count := 0;
-  Size := 512;
-  SetLength(Result, Size);
-
-  Height := High(Matrix);
-  Width := High(Matrix[0]);
-
-  if (Tolerance = 0) then
+  function Compare(const Character: TFontCharacter): Int32; inline;
+  var
+    I, Hits, Any: Int32;
+    P: TPoint;
   begin
-    for Y := 0 to Height do
-      for X := 0 to Width do
+    Result := 0;
+
+    with Self do
+    begin
+      Hits := 0;
+      Any := 0;
+
+      // count hits for the character
+      for I := 0 to Character.CharacterPointsLength - 1 do
       begin
-        if Int32(Matrix[Y][X]) = Color then
-        begin
-          Result[Count] := Point(X, Y);
-          Inc(Count);
+        P := Character.CharacterPoints[I];
+        if (FClient[P.Y + Offset.Y, P.X + Offset.X] <> FILTER_HIT) then
+          Exit;
 
-          if (Count = Size) then
-          begin
-            Size *= 2;
-            SetLength(Result, Size);
-          end;
-        end;
+        Inc(Hits, 2);
       end;
-  end else
-  begin
-    R := Color and $FF;
-    G := Color shr 8 and $FF;
-    B := Color shr 16 and $FF;
 
-    for Y := 0 to Height do
-      for X := 0 to Width do
+      if (Hits < Character.CharacterPointsLength) then
+        Exit; // < 50% match.
+
+      if (Character.BackgroundPointsLength > 0) then
       begin
-        Pixel := TRGB32(Matrix[Y][X]);
-
-        if Sqr(Pixel.R - R) + Sqr(Pixel.G - G) + Sqr(Pixel.B - B) <= Tolerance then
+        // counts hits for the points that should not have equal Color to character
+        for I := 0 to High(Character.BackgroundPoints) do
         begin
-          Result[Count] := Point(X, Y);
-          Inc(Count);
-
-          if (Count = Size) then
-          begin
-            Size *= 2;
-            SetLength(Result, Size);
-          end;
+          P := Character.BackgroundPoints[I];
+          if (FClient[P.Y + Offset.Y, P.X + Offset.X] <> FILTER_HIT) then
+            Inc(Any)
+          else
+            Dec(Hits);
         end;
+
+        if (Any <= (Character.BackgroundPointsLength div 2)) then
+          Exit; // <= 50% match.
       end;
+
+      Inc(Hits, Any);
+    end;
+
+    Result := Hits;
   end;
 
-  SetLength(Result, Count);
-end;
-
-function FindColorFromShadow(constref Matrix: T2DIntegerArray; MaxShadow: Int32 = 85): Int32;
 var
-  X, Y, Width, Height: Int32;
-  Size, Count: Int32;
-  Pixel: TRGB32;
-  Colors: TIntegerArray;
+  Index, BestIndex: Char;
+  Hits, BestHits: Int32;
 begin
-  Result := 0;
-  if (Length(Matrix) = 0) or (Length(Matrix[0]) = 0) then
-    Exit;
+  with Self do
+  begin
+    BestHits := 0;
 
-  Count := 0;
-  Size := 512;
-  SetLength(Colors, Size);
-
-  Height := High(Matrix);
-  Width := High(Matrix[0]);
-
-  for Y := 1 to Height do
-    for X := 1 to Width do
+    for Index := FONTSET_START to FONTSET_END do
     begin
-      Pixel := TRGB32(Matrix[Y][X]);
-
-      if ((Pixel.R + Pixel.G + Pixel.B) div 3) < MaxShadow then
+      if (FFont.Characters[Index].Value > FONTSET_SPACE) and InClient(FFont.Characters[Index], Offset) then
       begin
-        Colors[Count] := Matrix[Y-1][X-1];
-        Inc(Count);
+        Hits := Compare(FFont.Characters[Index]);
 
-        if (Count = Size) then
+        if (Hits > BestHits) then
         begin
-          Size *= 2;
-          SetLength(Colors, Size);
+          BestHits := Hits;
+          BestIndex := Index;
         end;
       end;
     end;
 
-  SetLength(Colors, Count);
-
-  Result := Mode(Colors);
+    Result := BestHits;
+    if (Result > 0) then
+      FoundCharacter := FFont.Characters[BestIndex];
+  end;
 end;
 
-procedure ThresholdAdaptive(var Matrix: T2DIntegerArray; Alpha, Beta: Byte; Invert: Boolean; C: Integer);
-var
-  I, Size, X, Y, W, H: Int32;
-  Threshold: UInt8;
-  Counter: Int64;
-  Tab: array [0..256] of UInt8;
-  Temp: T2DIntegerArray;
-begin
-  if Alpha = Beta then Exit;
-  if Invert then Exch(Alpha, Beta);
+function RecognizeChar_AnyColor(var Self: TSimpleOCR; const Offset: TPoint; out FoundCharacter: TFontCharacter): Int32;
 
-  H := Length(Matrix);
-  W := Length(Matrix[0]);
-  Size := (W * H) - 1;
+  function Compare(const Character: TFontCharacter): Int32; inline;
+  var
+    I, Hits, Any: Int32;
+    First: TRGB32;
+    P: TPoint;
+  begin
+    Result := 0;
 
-  SetLength(Temp, H, W);
-
-  Dec(W);
-  Dec(H);
-
-  //Finding the threshold - While at it set blue-scale to the RGB mean (needed for later).
-  Threshold := 0;
-
-  Counter := 0;
-  for Y := 0 to H do
-    for X := 0 to W do
+    with Self, FCompareRules.AnyColorRule do
     begin
-      with TRGB32(Matrix[Y][X]) do
-        Temp[Y][X] := (B + G + R) div 3;
+      Hits := 0;
+      Any := 0;
 
-      Counter += Temp[Y][X];
+      First := TRGB32(FClient[Character.CharacterPoints[0].Y + Offset.Y, Character.CharacterPoints[0].X + Offset.X]);
+      if (MaxShadowValue > 0) then
+      begin
+        if ((First.R + First.G + First.B) div 3 < 85) and
+           ((First.R < MaxShadowValue * 2) and (First.G < MaxShadowValue * 2) and (First.B < MaxShadowValue * 2)) then
+          Exit;
+      end;
+
+      // count hits for the character
+      for I := 0 to Character.CharacterPointsLength - 1 do
+      begin
+        P := Character.CharacterPoints[I];
+        with TRGB32(FClient[P.Y + Offset.Y, P.X + Offset.X]) do
+          if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > Tolerance then
+            Exit;
+
+        Inc(Hits, 2);
+      end;
+
+      if (Hits < Character.CharacterPointsLength) then
+        Exit; // < 50% match.
+
+      if (MaxShadowValue = 0) then
+      begin
+        // counts hits for the points that should not have equal Color to character
+        // not needed for shadow-fonts
+        for I := 0 to High(Character.BackgroundPoints) do
+        begin
+          P := Character.BackgroundPoints[I];
+          with TRGB32(FClient[P.Y + Offset.Y, P.X + Offset.X]) do
+            if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > Tolerance then
+              Inc(Any)
+            else
+              Dec(Hits);
+        end;
+
+        if (Length(Character.BackgroundPoints) > 0) and (Any <= (Length(Character.BackgroundPoints) div 2)) then
+          Exit;
+
+        Inc(Hits, Any);
+      end else
+      begin
+        // count hits for FFont-shadow
+        for I := 0 to High(Character.ShadowPoints) do
+        begin
+          P := Character.ShadowPoints[I];
+          with TRGB32(FClient[P.Y + Offset.Y, P.X + Offset.X]) do
+            if (R > MaxShadowValue) or (G > MaxShadowValue) or (B > MaxShadowValue) then
+              Exit;
+
+          Inc(Hits);
+        end;
+      end;
+
+      Result := Hits;
+    end;
+  end;
+
+var
+  Index, BestIndex: Char;
+  Hits, BestHits: Int32;
+begin
+  with Self do
+  begin
+    BestHits := 0;
+
+    for Index := FONTSET_START to FONTSET_END do
+    begin
+      if (FFont.Characters[Index].Value > FONTSET_SPACE) and InClient(FFont.Characters[Index], Offset) then
+      begin
+        Hits := Compare(FFont.Characters[Index]);
+
+        if (Hits > BestHits) then
+        begin
+          BestHits := Hits;
+          BestIndex := Index;
+        end;
+      end;
     end;
 
-  Threshold := (Counter div Size) + C;
-
-  for I := 0 to (Threshold - 1) do Tab[I] := Alpha;
-  for I := Threshold to 255 do Tab[I] := Beta;
-
-  for Y := 0 to H do
-    for X := 0 to W do
-      Matrix[Y][X] := Tab[Temp[Y][X]];
+    Result := BestHits;
+    if (Result > 0) then
+      FoundCharacter := FFont.Characters[BestIndex];
+  end;
 end;
 
 procedure TFontSet.Load(FontPath: String; Space: Int32);
+
+  function FindColor(Image: TLazIntfImage; Color: Int32): TPointArray;
+  var
+    X, Y: Int32;
+    Count: Int32 = 0;
+  begin
+    SetLength(Result, Image.Width * Image.Height);
+
+    for X := 0 to Image.Width - 1 do
+      for Y := 0 to Image.Height - 1 do
+      begin
+        if FPColorToTColor(Image.Colors[X, Y]) = Color then
+        begin
+          Result[Count].X := X;
+          Result[Count].Y := Y;
+
+          Inc(Count);
+        end;
+      end;
+
+    SetLength(Result, Count);
+  end;
+
 var
   I: Int32;
   Image: TLazIntfImage;
   Description: TRawImageDescription;
-  FontChar: TFontChar;
+  FontChar: TFontCharacter;
 begin
   FontPath := IncludeTrailingPathDelimiter(ExpandFileName(FontPath));
 
   Self.Name := ExtractFileNameOnly(FontPath);
   Self.SpaceWidth := Space;
-  Self.Count := 0;
-
-  SetLength(Self.Data, FONTSET_COUNT);
 
   Description.Init_BPP32_B8G8R8_BIO_TTB(0, 0);
 
   Image := TLazIntfImage.Create(0, 0);
   Image.DataDescription := Description;
 
-  for I := FONTSET_START to FONTSET_END do
+  for I := 32 to 126 do
   begin
     if FileExists(FontPath + IntToStr(I) + '.bmp') then
     begin
       Image.LoadFromFile(FontPath + IntToStr(I) + '.bmp');
 
-      FontChar := Default(TFontChar);
-      FontChar.Character := Chr(I);
+      FontChar := Default(TFontCharacter);
       FontChar.ImageWidth := Image.Width;
       FontChar.ImageHeight := Image.Height;
+      FontChar.Value := Chr(I);
 
-      if FontChar.Character = #32 then
+      if (Chr(I) = FONTSET_START) then
       begin
         FontChar.Width := Image.Width;
         FontChar.Height := Image.Height;
-        FontChar.CharacterPoints := FindColors(MatrixFromPointer(Pointer(Image.PixelData), Image.Width, Image.Height), $000000, 0);
+        FontChar.CharacterPoints := FindColor(Image, $000000);
         FontChar.CharacterBounds := TPABounds(FontChar.CharacterPoints);
       end else
       begin
-        FontChar.CharacterPoints := FindColors(MatrixFromPointer(Pointer(Image.PixelData), Image.Width, Image.Height), $FFFFFF, 0);
+        FontChar.CharacterPoints := FindColor(Image, $FFFFFF);
         FontChar.CharacterBounds := TPABounds(FontChar.CharacterPoints);
-        FontChar.ShadowPoints := FindColors(MatrixFromPointer(Pointer(Image.PixelData), Image.Width, Image.Height), $0000FF, 0);
-        FontChar.HasShadow := Length(FontChar.ShadowPoints) > 0;
+        FontChar.ShadowPoints := FindColor(Image, $0000FF);
 
-        if FontChar.CharacterBounds.X1 > 0 then
+        if (FontChar.CharacterBounds.X1 > 0) then
         begin
-          OffsetTPA(FontChar.CharacterPoints, -FontChar.CharacterBounds.X1,0);
+          OffsetTPA(FontChar.CharacterPoints, -FontChar.CharacterBounds.X1, 0);
           OffsetTPA(FontChar.ShadowPoints, -FontChar.CharacterBounds.X1, 0);
 
           SortTPAByColumn(FontChar.CharacterPoints);
         end;
 
-        FontChar.BackgroundPoints := InvertTPA(CombineTPA(FontChar.CharacterPoints, FontChar.ShadowPoints));
+        FontChar.BackgroundPoints := InvertTPA(FontChar.CharacterPoints + FontChar.ShadowPoints);
+        FontChar.BackgroundPointsLength := Length(FontChar.BackgroundPoints);
 
-        with TPABounds(CombineTPA(FontChar.CharacterPoints, FontChar.ShadowPoints)) do
+        with TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints) do
         begin
           FontChar.Width  := X2-X1+1;
           FontChar.Height := Y2-Y1+1;
@@ -305,22 +380,20 @@ begin
       if FontChar.Height > MaxHeight then
         MaxHeight := FontChar.Height;
 
-      Self.Data[Self.Count] := FontChar;
-      Self.Count += 1;
+      FontChar.TotalBounds := TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints + FontChar.BackgroundPoints);
+      FontChar.CharacterPointsLength := Length(FontChar.CharacterPoints);
+      if (FontChar.CharacterPointsLength > 0) then
+        Self.Characters[FontChar.Value] := FontChar;
     end;
   end;
 
   Image.Free();
-
-  SetLength(Self.Data, Self.Count);
 end;
 
-function TSimpleOCR.DrawText(constref Text: String; constref FontSet: TFontSet): T2DIntegerArray;
+function TSimpleOCR.DrawText(const Text: String; const Font: TFontSet): T2DIntegerArray;
 var
   I, X, Y: Int32;
   P: TPoint;
-  FontChar: TFontChar;
-  FontChars: TFontChars;
   Bounds: TBox;
 begin
   Bounds.X1 := 0;
@@ -328,49 +401,53 @@ begin
   Bounds.Y1 := $FFFFFF;
   Bounds.Y2 := 0;
 
-  SetLength(FontChars, Length(Text));
+  for I := 1 to Length(Text) do
+    if (Text[I] in FONTSET_RANGE) then
+      with Font.Characters[Text[I]] do
+      begin
+        if (Text[I] <> FONTSET_START) then
+        begin
+          if (CharacterBounds.Y1 < Bounds.Y1) then
+            Bounds.Y1 := CharacterBounds.Y1;
+          if (CharacterBounds.Y2 > Bounds.Y2) then
+            Bounds.Y2 := CharacterBounds.Y2;
+        end;
+
+        Bounds.X2 += ImageWidth;
+      end;
+
+  SetLength(Result, (Bounds.Y2 - Bounds.Y1) + 1, Bounds.X2);
 
   for I := 1 to Length(Text) do
-  begin
-    FontChar := FontSet.Data[Ord(Text[I]) - FONTSET_START];
-    FontChars[I-1] := FontChar;
+    if (Text[I] in FONTSET_RANGE) then
+      with Font.Characters[Text[I]] do
+      begin
+        if (Text[I] = ' ') then
+        begin
+          for X := Bounds.X1 to (Bounds.X1 + ImageWidth) - 1 do
+           for Y := 0 to Bounds.Y2 - Bounds.Y1 do
+              Result[Y, X] := $00FF00;
+        end else
+          for P in CharacterPoints do
+            Result[P.Y - Bounds.Y1, Bounds.X1 + P.X + CharacterBounds.X1] := $0000FF;
 
-    if (FontChar.Character <> #32) then
-    begin
-      if (FontChar.CharacterBounds.Y1 < Bounds.Y1) then
-        Bounds.Y1 := FontChar.CharacterBounds.Y1;
-      if (FontChar.CharacterBounds.Y2 > Bounds.Y2) then
-        Bounds.Y2 := FontChar.CharacterBounds.Y2;
-    end;
-
-    Bounds.X2 += FontChar.ImageWidth;
-  end;
-
-  SetLength(Result, Bounds.Y2-Bounds.Y1 + 1, Bounds.X2);
-
-  for I := 0 to High(FontChars) do
-  begin
-    FontChar := FontChars[I];
-
-    if FontChar.Character = #32 then
-    begin
-      for X := Bounds.X1 to (Bounds.X1 + FontChar.ImageWidth) - 1 do
-       for Y := 0 to Bounds.Y2 - Bounds.Y1 do
-          Result[Y, X] := $00FF00;
-    end else
-      for P in FontChar.CharacterPoints do
-        Result[P.Y - Bounds.Y1, Bounds.X1 + P.X + FontChar.CharacterBounds.X1] := $0000FF;
-
-    Bounds.X1 += FontChar.ImageWidth;
-  end;
+        Bounds.X1 += ImageWidth;
+      end;
 end;
 
-function TSimpleOCR.LocateText(constref Matrix: T2DIntegerArray; constref Text: String; constref FontSet: TFontSet; constref Filter: TCompareRules; out Bounds: TBox): Single;
+function TSimpleOCR.LocateText(const Matrix: T2DIntegerArray; const Text: String; const Font: TFontSet; const Filter: TCompareRules; out Bounds: TBox): Single;
+
+  function GetClientSafe(X, Y: Int32): Int32; inline;
+  begin
+    if (X < 0) or (Y < 0) or (X >= FWidth) or (Y >= FHeight) then
+      Result := -1
+    else
+      Result := FClient[Y, X];
+  end;
+
 var
-  X, Y, W, H, Tolerance: Int32;
-  Pixel: TRGB32;
-  R, G, B: UInt8;
-  Color, Bad, dX, dY, I: Int32;
+  X, Y: Int32;
+  Color, Bad, I: Int32;
   P: TPoint;
   Match: Single;
   TextMatrix: T2DIntegerArray;
@@ -382,356 +459,291 @@ label
 begin
   Result := 0;
 
-  TextMatrix := Self.DrawText(Text, FontSet);
-  TextHeight := Length(TextMatrix);
-  if (TextHeight = 0) then
-    Exit;
-  TextWidth := Length(TextMatrix[0]);
-  if (TextWidth = 0) then
-    Exit;
-
-  // Preprocess
-  H := High(Matrix);
-  W := High(Matrix[0]);
-
-  if (Filter.Color > -1) then
+  if Self.Init(Matrix, Font, Filter) then
   begin
-    if (Filter.Tolerance = 0) then
-    begin
-      for Y := 0 to H do
-        for X := 0 to W do
+    TextMatrix := Self.DrawText(Text, Font);
+    TextHeight := Length(TextMatrix);
+    if (TextHeight = 0) then
+      Exit;
+    TextWidth := Length(TextMatrix[0]);
+    if (TextWidth = 0) then
+      Exit;
+
+    SetLength(CharacterIndices, TextWidth * TextHeight);
+    SetLength(OtherIndices, TextWidth * TextHeight);
+
+    CharacterCount := 0;
+    OtherCount := 0;
+
+    for Y := 0 to TextHeight - 1 do
+      for X := 0 to TextWidth - 1 do
+        if TextMatrix[Y][X] = 255 then
         begin
-          if Matrix[Y][X] = Filter.Color then
-            Matrix[Y][X] := 1
-          else
-            Matrix[Y][X] := -1;
+          CharacterIndices[CharacterCount].X := X;
+          CharacterIndices[CharacterCount].Y := Y;
+
+          Inc(CharacterCount);
+        end else
+        begin
+          OtherIndices[OtherCount].X := X;
+          OtherIndices[OtherCount].Y := Y;
+
+          Inc(OtherCount);
         end;
-    end else
+
+    CharacterCount := CharacterCount - 1;
+    OtherCount := OtherCount - 1;
+
+    if Length(CharacterIndices) > 0 then
     begin
-      Tolerance := Sqr(Filter.Tolerance);
+      FSearchArea.X2 -= TextWidth - 1;
+      FSearchArea.Y2 -= TextHeight - 1;
 
-      B := Filter.Color and $FF;
-      G := Filter.Color shr 8 and $FF;
-      R := Filter.Color shr 16 and $FF;
-
-      for Y := 0 to H do
-        for X := 0 to W do
+      for Y := FSearchArea.Y1 to FSearchArea.Y2 do
+        for X := FSearchArea.X1 to FSearchArea.X2 do
         begin
-          Pixel := TRGB32(Matrix[Y][X]);
+          P.Y := Y + CharacterIndices[0].Y;
+          P.X := X + CharacterIndices[0].X;
 
-          if Sqr(Pixel.R - R) + Sqr(Pixel.G - G) + Sqr(Pixel.B - B) <= Tolerance then
-            Matrix[Y][X] := 1
-          else
-            Matrix[Y][X] := -1;
+          Color := GetClientSafe(P.X, P.Y);
+          if (Color = FILTER_MISS) then
+            Continue;
+
+          for I := 1 to CharacterCount do
+          begin
+            P.Y := Y + CharacterIndices[I].Y;
+            P.X := X + CharacterIndices[I].X;
+
+            if (GetClientSafe(P.X, P.Y) <> Color) then
+              goto NotFound;
+          end;
+
+          Bad := 0;
+
+          for I := 0 to OtherCount do
+          begin
+            P.Y := Y + OtherIndices[I].Y;
+            P.X := X + OtherIndices[I].X;
+
+            if (GetClientSafe(P.X, P.Y) = Color) then
+              Inc(Bad);
+          end;
+
+          Match := 1 - (Bad / OtherCount);
+
+          if (Match > Result) then
+          begin
+            Result := Match;
+
+            Bounds.X1 := X;
+            Bounds.Y1 := Y;
+            Bounds.X2 := X + TextWidth;
+            Bounds.Y2 := Y + TextHeight;
+
+            if (Result = 1) then
+              Exit;
+          end;
+
+          NotFound:
         end;
     end;
   end;
-
-  // Matching
-  SetLength(CharacterIndices, TextWidth * TextHeight);
-  SetLength(OtherIndices, TextWidth * TextHeight);
-
-  TextHeight -= 1;
-  TextWidth -= 1;
-
-  CharacterCount := 0;
-  OtherCount := 0;
-
-  for Y := 0 to TextHeight do
-    for X := 0 to TextWidth do
-      if TextMatrix[Y][X] = $0000FF then
-      begin
-        CharacterIndices[CharacterCount].X := X;
-        CharacterIndices[CharacterCount].Y := Y;
-
-        Inc(CharacterCount);
-      end else
-      begin
-        OtherIndices[OtherCount].X := X;
-        OtherIndices[OtherCount].Y := Y;
-
-        Inc(OtherCount);
-      end;
-
-  CharacterCount := CharacterCount - 1;
-  OtherCount := OtherCount - 1;
-
-  if Length(CharacterIndices) > 0 then
-  begin
-    dX := Length(Matrix[0]) - (TextWidth+1);
-    dY := Length(Matrix) - (TextHeight+1);
-
-    for Y := 0 to dY do
-      for X := 0 to dX do
-      begin
-        P.Y := Y + CharacterIndices[0].Y;
-        P.X := X + CharacterIndices[0].X;
-
-        Color := Matrix[P.Y][P.X];
-        if (Color = -1) then
-          Continue;
-
-        for I := 1 to CharacterCount do
-        begin
-          P.Y := Y + CharacterIndices[I].Y;
-          P.X := X + CharacterIndices[I].X;
-
-          if (Matrix[P.Y][P.X] <> Color) then
-            goto NotFound;
-        end;
-
-        Bad := 0;
-
-        for I := 0 to OtherCount do
-        begin
-          P.Y := Y + OtherIndices[I].Y;
-          P.X := X + OtherIndices[I].X;
-
-          if (Matrix[P.Y][P.X] = Color) then
-            Inc(Bad);
-        end;
-
-        Match := 1 - (Bad / OtherCount);
-
-        if Match > Result then
-        begin
-          Result := Match;
-
-          Bounds.X1 := X;
-          Bounds.Y1 := Y;
-          Bounds.X2 := X + TextWidth;
-          Bounds.Y2 := Y + TextHeight;
-
-          if Result = 1 then
-            Exit;
-        end;
-
-        NotFound:
-      end;
-  end;
 end;
 
-function TSimpleOCR.LocateText(constref Matrix: T2DIntegerArray; constref Text: String; constref FontSet: TFontSet; constref Filter: TCompareRules; constref MinMatch: Single): Boolean;
-var
-  B: TBox;
+function TSimpleOCR.Init(const Matrix: T2DIntegerArray; const Font: TFontSet; const Filter: TCompareRules): Boolean;
 begin
-  Result := Self.LocateText(Matrix, Text, FontSet, Filter, B) >= MinMatch;
+  FFont := Font;
+  FCompareRules := Filter;
+  FClient := Matrix;
+  FHeight := Length(FClient);
+  if (FHeight > 0) then
+    FWidth := Length(FClient[0]);
+
+  Result := (FHeight > 0) and (FWidth > 0);
+  if Result then
+  begin
+    FSearchArea.X1 := 0;
+    FSearchArea.Y1 := 0;
+    FSearchArea.X2 := FWidth;
+    FSearchArea.Y2 := FHeight;
+
+    // Preprocess to binary image
+    case FCompareRules.Rule of
+      EOCRRule.COLOR:
+        Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), FSearchArea);
+
+      EOCRRule.THRESHOLD:
+        Result := SimpleOCRFilter.ApplyThresholdRule(FClient, Filter.ThresholdRule.Invert, Filter.ThresholdRule.Amount, FSearchArea);
+
+      EOCRRule.SHADOW:
+        Result := SimpleOCRFilter.ApplyShadowRule(FClient, Filter.ShadowRule.MaxShadowValue, FSearchArea);
+    end;
+
+    FSearchArea := FSearchArea.Expand(FFont.MaxWidth div 2, FFont.MaxHeight div 2);
+  end;
 end;
 
-function TSimpleOCR.RecognizeChar(constref Character: TFontChar; constref Offset: TPoint; constref Filter: TCompareRules): Int32;
-var
-  I, Hits, Any, MaxShadow: Int32;
-  First, Color: TRGB32;
-  P: TPoint;
+function TSimpleOCR.InClient(const Character: TFontCharacter; const Offset: TPoint): Boolean;
 begin
-  Hits := 0;
-  Any := 0;
-
-  if (Filter.Color = -1) then
-  begin
-    P := Character.CharacterPoints[0];
-    P.X += Offset.X;
-    P.Y += Offset.Y;
-    if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
-      Exit(-1);
-
-    First := TRGB32(Client[P.Y, P.X]);
-    if Filter.UseShadow then
-    begin
-      MaxShadow := 2 * Filter.ShadowMaxValue;
-      if ((First.R + First.G + First.B) div 3 < 85) and ((First.R < MaxShadow) and (First.G < MaxShadow) and (First.B < MaxShadow)) then
-        Exit(-1);
-    end;
-  end else
-    First := TRGB32(Filter.Color);
-
-  //count hits for the character
-  for I := 0 to High(Character.CharacterPoints) do
-  begin
-    P := Character.CharacterPoints[I];
-    P.X += Offset.X;
-    P.Y += Offset.Y;
-    if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
-      Exit(-1);
-
-    Color := TRGB32(Client[P.Y, P.X]);
-    if Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) > Filter.Tolerance then
-      Exit(-1)
-    else
-      Inc(Hits, 2);
-  end;
-
-  if Hits < Length(Character.CharacterPoints) then
-    Exit(-1); // < 50% match.
-
-  if not Filter.UseShadow then
-  begin
-    // counts hits for the points that should not have equal Color to character
-    // not needed for shadow-fonts
-    for I := 0 to High(Character.BackgroundPoints) do
-    begin
-      P := Character.BackgroundPoints[I];
-      P.X += Offset.X;
-      P.Y += Offset.Y;
-      if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
-        Exit(-1);
-
-      Color := TRGB32(Client[P.Y, P.X]);
-      if Sqr(Color.R - First.R) + Sqr(Color.B - First.B) + Sqr(Color.G - First.G) > Filter.Tolerance then
-        Inc(Any)
-      else
-        Dec(Hits);
-    end;
-
-    if (Length(Character.BackgroundPoints) > 0) and (Any <= (Length(Character.BackgroundPoints) div 2)) then
-      Exit(-1) // <=50% match.
-    else
-      Inc(Hits, Any);
-  end else
-  begin
-    // count hits for font-shadow
-    for I := 0 to High(Character.ShadowPoints) do
-    begin
-      P := Character.ShadowPoints[I];
-      P.X += Offset.X;
-      P.Y += Offset.Y;
-      if (P.X >= Self.Width) or (P.Y >= Self.Height) or (P.X < 0) or (P.Y < 0) then
-        Exit(-1);
-
-      Color := TRGB32(Client[P.Y, P.X]);
-
-      if not ((Color.R < Filter.ShadowMaxValue) and (Color.G < Filter.ShadowMaxValue) and (Color.B < Filter.ShadowMaxValue)) then
-        Exit(-1)
-      else
-        Inc(Hits);
-    end;
-  end;
-
-  if (Hits < Filter.MinCharacterMatch) then
-    Exit(-1);
-
-  Result := Hits;
+  with Character.TotalBounds do
+    Result := (X1 + Offset.X >= 0) and (Y1 + Offset.Y >= 0) and (X2 + Offset.X < FWidth) and (Y2 + Offset.Y < FHeight);
 end;
 
-function TSimpleOCR.RecognizeStatic(Bounds: TBox; constref Filter: TCompareRules; constref MaxWalk: Int32; out Hits: Int32): String;
+function TSimpleOCR.RecognizeRow(const RecognizeCharFunction: TRecognizeCharFunction; Bounds: TBox; const MaxWalk: Int32; out TextHits: Int32; out TextBounds: TBox): String;
 var
-  I: Int32;
-  Space: Int32;
-  CharacterHits: Int32;
-  BestCharaterHits: Int32;
-  BestCharacter: Int32;
+  Character: TFontCharacter;
+  Space, Hits, MinPointsNeeded: Int32;
 begin
   Result := '';
 
-  Hits := 0;
+  if (FCompareRules.MinCharacterMatch in [FONTSET_START..FONTSET_END]) then
+    MinPointsNeeded := FFont.Characters[FCompareRules.MinCharacterMatch].CharacterPointsLength
+  else
+    MinPointsNeeded := 0;
+
+  TextBounds := Box($FFFFFF, $FFFFFF, 0, 0);
+  TextHits := 0;
+
   Space := 0;
 
   while (Bounds.X1 < Bounds.X2) and (Space < MaxWalk) do
   begin
-    BestCharacter := -1;
-    BestCharaterHits := 0;
+    Hits := RecognizeCharFunction(Self, Point(Bounds.X1, Bounds.Y1), Character);
 
-    for I := 0 to Self.Font.Count - 1 do
+    if (Hits > 0) then
     begin
-      CharacterHits := Self.RecognizeChar(Self.Font.Data[I], Point(Bounds.X1, Bounds.Y1), Filter);
-      if (CharacterHits > BestCharaterHits) then
+      if (Character.CharacterPointsLength >= MinPointsNeeded) then
       begin
-        BestCharaterHits := CharacterHits;
-        BestCharacter := I;
-      end;
-    end;
+        if (Result <> '') and (Space >= FFont.SpaceWidth) then
+          Result += ' ';
+        Space := 0;
 
-    if (BestCharacter > -1) then
-    begin
-      if (Result <> '') and (Space >= Self.Font.SpaceWidth) then
-        Result += #32;
-      Space := 0;
+        TextBounds.X1 := Min(TextBounds.X1, Bounds.X1 + Character.CharacterBounds.X1);
+        TextBounds.Y1 := Min(TextBounds.Y1, Bounds.Y1 + Character.CharacterBounds.Y1);
+        TextBounds.X2 := Max(TextBounds.X2, Bounds.X1 + Character.CharacterBounds.X2);
+        TextBounds.Y2 := Max(TextBounds.Y2, Bounds.Y1 + Character.CharacterBounds.Y2);
 
-      Hits += BestCharaterHits;
-      Result += Self.Font.Data[BestCharacter].Character;
+        TextHits += Hits;
+        Result += Character.Value;
+        Bounds.X1 += Character.Width;
 
-      Bounds.X1 += Self.Font.Data[BestCharacter].Width;
+        Continue;
+      end else
+        Space := 0;
     end else
-    begin
       Space += 1;
 
-      Bounds.X1 += 1;
-    end;
+    Bounds.X1 += 1;
   end;
 end;
 
-function TSimpleOCR.RecognizeDynamic(Bounds: TBox; constref Filter: TCompareRules): String;
+function TSimpleOCR.Recognize(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet): String;
 var
-  BestTextHits, TextHits: Int32;
-  Text: String;
+  Text, BestText: String;
+  Hits, BestHits: Int32;
+  Bounds: TBox;
 begin
   Result := '';
 
-  BestTextHits := 0;
-
-  while Bounds.Y1 < Bounds.Y2 do
+  if Self.Init(Matrix, Font, Filter) then
   begin
-    Text := Self.RecognizeStatic(Bounds, Filter, High(Int32), TextHits);
+    BestHits := 0;
+    BestText := '';
 
-    if TextHits > BestTextHits then
+    while (FSearchArea.Y1 < FSearchArea.Y2) do
     begin
-      BestTextHits := TextHits;
+      Text := Self.RecognizeRow(@RecognizeChar, FSearchArea, $FFFFFF, Hits, Bounds);
 
-      Result := Text;
+      if (Hits > BestHits) then
+      begin
+        BestText := Text;
+        BestHits := Hits;
+      end;
+
+      FSearchArea.Y1 += 1;
     end;
 
-    Bounds.Y1 += 1;
+    if (BestHits > 0) then
+      Result := BestText;
   end;
 end;
 
-function TSimpleOCR.Recognize(constref Matrix: T2DIntegerArray; Filter: TCompareRules; constref FontSet: TFontSet; constref IsStatic: Boolean; constref MaxWalk: Int32): String;
+function TSimpleOCR.RecognizeStatic(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet; const MaxWalk: Int32): String;
+var
+  Hits: Int32;
+  Bounds: TBox;
+begin
+  if Self.Init(Matrix, Font, Filter) then
+  begin
+    FCompareRules.AnyColorRule.Tolerance := Sqr(FCompareRules.AnyColorRule.Tolerance);
+
+    if (FCompareRules.Rule = EOCRRule.ANY_COLOR) then
+      Result := Self.RecognizeRow(@RecognizeChar_AnyColor, Box(0, 0, FWidth - 1, FHeight - 1), MaxWalk, Hits, Bounds)
+    else
+      Result := Self.RecognizeRow(@RecognizeChar, Box(0, 0, FWidth - 1, FHeight - 1), MaxWalk, Hits, Bounds);
+  end;
+end;
+
+function TSimpleOCR.RecognizeMulti(const Matrix: T2DIntegerArray; const Filter: TCompareRules; const Font: TFontSet; out TextBounds: TBoxArray): TStringArray;
+
+  function _RecognizeBest(Bounds: TBox; out BestTextBounds: TBox): String; inline;
+  var
+    Text, BestText: String;
+    Hits, BestHits: Int32;
+    TextBounds: TBox;
+  begin
+    Result := '';
+
+    BestHits := 0;
+    BestText := '';
+
+    while (Bounds.Y1 < Bounds.Y2) do
+    begin
+      Text := Self.RecognizeRow(@RecognizeChar, Bounds, $FFFFFF, Hits, TextBounds);
+
+      if (Hits > BestHits) then
+      begin
+        BestHits := Hits;
+        BestText := Text;
+        BestTextBounds := TextBounds;
+      end;
+
+      Bounds.Y1 += 1;
+    end;
+
+    Result := BestText;
+  end;
+
 var
   Bounds: TBox;
+  Text: String;
   Hits: Int32;
 begin
-  Result := '';
+  Result := nil;
+  TextBounds := nil;
 
-  Self.Font := FontSet;
-  Self.Client := Matrix;
-  if (Length(Self.Client) = 0) or (Length(Client[0]) = 0) then
-    Exit;
-
-  Self.Width := Length(Client[0]);
-  Self.Height := Length(Client);
-
-  if Filter.Threshold then
+  if Self.Init(Matrix, Font, Filter) then
   begin
-    Filter.Color := 255;
+    FCompareRules.MinCharacterMatch := ',';
 
-    ThresholdAdaptive(Self.Client, 0, Filter.Color, Filter.ThresholdInvert, Filter.ThresholdAmount);
-  end;
-
-  if Filter.UseShadowForColor then
-    Filter.Color := FindColorFromShadow(Self.Client);
-
-  if (Filter.Tolerance > 0) then
-    Filter.Tolerance := Sqr(Filter.Tolerance);
-
-  Bounds.X1 := 0;
-  Bounds.Y1 := 0;
-  Bounds.X2 := Self.Width - 1;
-  Bounds.Y2 := Self.Height - 1;
-
-  if IsStatic then
-    Result := Self.RecognizeStatic(Bounds, Filter, MaxWalk, Hits)
-  else
-  begin
-    // Speed by finding bounds
-    if (Filter.Color > -1) then
+    while (FSearchArea.Y1 + (FFont.MaxHeight div 2) < FSearchArea.Y2) do
     begin
-      Bounds := TPABounds(FindColors(Self.Client, Filter.Color, Filter.Tolerance));
-      Bounds.X1 -= FontSet.MaxWidth  div 2;
-      Bounds.Y1 -= FontSet.MaxHeight div 2;
-      Bounds.X2 += FontSet.MaxWidth  div 2;
-      Bounds.Y2 += FontSet.MaxHeight div 2;
-    end;
+      Self.RecognizeRow(@RecognizeChar, FSearchArea, $FFFFFF, Hits, Bounds);
 
-    Result := Self.RecognizeDynamic(Bounds, Filter);
+      if (Hits > 0) then
+      begin
+        Text := _RecognizeBest(Box(FSearchArea.X1, FSearchArea.Y1, FSearchArea.X2, FSearchArea.Y1 + FFont.MaxHeight - 2), Bounds);
+        if (Text = '') then
+          Exit;
+
+        Result := Result + [Text];
+        TextBounds := TextBounds + [Bounds];
+
+        FSearchArea.Y1 += FFont.MaxHeight - 4;
+      end;
+
+      FSearchArea.Y1 += 1;
+    end;
   end;
 end;
 

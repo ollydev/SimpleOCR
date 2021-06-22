@@ -6,7 +6,7 @@ unit simpleocr.tpa;
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
 [==============================================================================}
 {$mode objfpc}{$H+}
-{$macro on}
+{$i simpleocr.inc}
 
 interface
 
@@ -18,7 +18,6 @@ procedure Exch(var A,B:Int32); Inline; overload;
 procedure Exch(var A,B:TPoint); Inline; overload;
 
 function TPABounds(const TPA: TPointArray): TBox;
-function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
 function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX,SY:Integer);
 procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right:Int32);
@@ -69,18 +68,6 @@ begin
       Result.y1 := TPA[i].y;
   end;
 end;
-
-{*
- Unite two TPAs into one
-*}
-function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
-begin
-  if (High(TPA1) = -1) then Exit(TPA2)
-  else if (High(TPA2) = -1) then Exit(TPA1);
-  SetLength(Result, High(TPA1) + High(TPA2) + 2);
-  Move(TPA1[Low(TPA1)], Result[Low(Result)],  Length(TPA1)*SizeOf(TPA1[0]));
-  Move(TPA2[Low(TPA2)], Result[Length(TPA1)], Length(TPA2)*SizeOf(TPA2[0]));
-end; 
 
 {*
  Returns the points not in the TPA within the area the TPA covers.
