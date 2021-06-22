@@ -5,25 +5,24 @@ unit simpleocr.tpa;
   Project URL: https://github.com/slackydev/SimpleOCR
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
 [==============================================================================}
-{$mode objfpc}{$H+}
-{$macro on}
+{$i simpleocr.inc}
 
 interface
 
 uses
+  classes, sysutils,
   simpleocr.types;
 
-procedure Exch(var A,B:UInt8); Inline; overload;
-procedure Exch(var A,B:Int32); Inline; overload;
-procedure Exch(var A,B:TPoint); Inline; overload;
+procedure Exch(var A,B:UInt8); inline; overload;
+procedure Exch(var A,B:Integer); inline; overload;
+procedure Exch(var A,B:TPoint); inline; overload;
 
 function TPABounds(const TPA: TPointArray): TBox;
-function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
 function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX,SY:Integer);
-procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right:Int32);
+procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right: Integer);
 procedure SortTPAbyColumn(var Arr: TPointArray);
-function Mode(Self: TIntegerArray): Int32;
+function Mode(Self: TIntegerArray; Hi: Integer): Integer;
 
 implementation 
 
@@ -33,8 +32,8 @@ begin
   t := A; A := B; B := t; 
 end;
 
-procedure Exch(var A,B:Int32);
-var t:Int32;
+procedure Exch(var A,B:Integer);
+var t:Integer;
 begin 
   t := A; A := B; B := t; 
 end;
@@ -69,18 +68,6 @@ begin
       Result.y1 := TPA[i].y;
   end;
 end;
-
-{*
- Unite two TPAs into one
-*}
-function CombineTPA(const TPA1, TPA2: TPointArray): TPointArray;
-begin
-  if (High(TPA1) = -1) then Exit(TPA2)
-  else if (High(TPA2) = -1) then Exit(TPA1);
-  SetLength(Result, High(TPA1) + High(TPA2) + 2);
-  Move(TPA1[Low(TPA1)], Result[Low(Result)],  Length(TPA1)*SizeOf(TPA1[0]));
-  Move(TPA2[Low(TPA2)], Result[Length(TPA1)], Length(TPA2)*SizeOf(TPA2[0]));
-end; 
 
 {*
  Returns the points not in the TPA within the area the TPA covers.
@@ -130,8 +117,8 @@ begin;
 end;
 
 //Fast TPointArray sorting for small arrays.
-procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left, Right: Int32);
-var i, j:Int32;
+procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left, Right: Integer);
+var i, j:Integer;
 begin
   for i := Left to Right do
     for j := i downto Left + 1 do begin
@@ -144,7 +131,7 @@ end;
 //Sort small TPA by Column.
 procedure SortTPAbyColumn(var Arr: TPointArray);
 var
-  i,Hi: Int32;
+  i,Hi: Integer;
   Weight:TIntegerArray;
   Area : TBox;
 begin
@@ -158,7 +145,7 @@ begin
   SetLength(Weight, 0);
 end;
 
-procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer) ;
+procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer);
 var
   Lo, Hi, Pivot, T: Integer;
 begin
@@ -166,35 +153,35 @@ begin
   Hi := iHi;
   Pivot := A[(Lo + Hi) div 2];
   repeat
-    while A[Lo] < Pivot do Inc(Lo) ;
-    while A[Hi] > Pivot do Dec(Hi) ;
+    while A[Lo] < Pivot do Inc(Lo);
+    while A[Hi] > Pivot do Dec(Hi);
     if Lo <= Hi then
     begin
       T := A[Lo];
       A[Lo] := A[Hi];
       A[Hi] := T;
-      Inc(Lo) ;
-      Dec(Hi) ;
+      Inc(Lo);
+      Dec(Hi);
     end;
   until Lo > Hi;
-  if Hi > iLo then QuickSort(A, iLo, Hi) ;
-  if Lo < iHi then QuickSort(A, Lo, iHi) ;
+  if Hi > iLo then QuickSort(A, iLo, Hi);
+  if Lo < iHi then QuickSort(A, Lo, iHi);
 end;
 
-function Mode(Self: TIntegerArray): Int32;
+function Mode(Self: TIntegerArray; Hi: Integer): Integer;
 var
-  i,hits,best: Int32;
-  cur: Int32;
+  i, hits, best: Integer;
+  cur: Integer;
 begin
   Result := 0;
 
   if Length(Self) > 0 then
   begin
-    QuickSort(Self, Low(Self), High(Self));
+    QuickSort(Self, 0, Hi);
     cur := self[0];
     hits := 1;
     best := 0;
-    for i:=1 to High(self) do
+    for i:=1 to Hi do
     begin
       if (self[i] <> cur) then
       begin

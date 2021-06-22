@@ -4,6 +4,8 @@
 *.so.aarch64
 *.bat
 *.dylib
+*.res
+*.exe
 backup
 lib
-*.res
+/fonts/

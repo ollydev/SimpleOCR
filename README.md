@@ -1,63 +1,94 @@
-## SimpleOCR
+# SimpleOCR
 
-SimpleOCR is a Simba plugin for reading text in Old School RuneScape. 
+SimpleOCR is a Simba plugin for reading text in Old School RuneScape originally developed by [@slackydev](https://github.com/slackydev/SimpleOCR).
 
-Results: 
+The algorithm is very much designed for the games "blocky" text where no anti aliasing is applied. Every pixel of the glyph must match for for a character to be recognized. 
 
-![Example](docs/uptext-1.png)
-```
-Recognized: Talk-to Grand Exchange Clerk / 262 more options
-````
+The actual character recognition is quite similar to calling Simba's `FindBitmap` for every character in the fontset.
 
-![Example](docs/uptext-2.png)
-```
-Recognized: Climb-up Ladder / 2 more option
-```
+----
 
------
-
-## Exports
-
-```pascal 
-procedure TFontSet.Load(constref Font: String; constref Space: Int32 = 4);
-function TSimpleOCR.DrawText(constref Text: String; constref FontSet: TFontSet): T2DIntegerArray;
-function TSimpleOCR.Recognize(constref B: TBox; constref Filter: TCompareRules; constref Font: TFontSet; constref IsStatic: Boolean = False; constref MaxWalk: Int32 = 40): String; overload;
-function TSimpleOCR.RecognizeNumber(constref B: TBox; constref Filter: TCompareRules; constref Font: TFontSet; constref IsStatic: Boolean = False; constref MaxWalk: Int32 = 40): Int64;
-function TSimpleOCR.LocateText(constref B: TBox; constref Text: String; constref Font: TFontSet; constref Filter: TCompareRules; out Bounds: TBox): Single; overload;
-function TSimpleOCR.LocateText(constref B: TBox; constref Text: String; constref Font: TFontSet; constref Filter: TCompareRules; constref MinMatch: Single = 1): Boolean; overload;
-```
-
------
-
-`Filter` parameter:
+## Exported Methods
 
 ```pascal
-TCompareRules = packed record 
-  Color, Tolerance: Int32;    // Color and tolerance. Color can be -1 to match any color.
-  UseShadow: Boolean;         // If the fontset has a shadow, it can be used to improve recognition.
-  ShadowMaxValue: Int32;      // Max brightness of shadow, Shadows are black so this is often low.
-  Threshold: Boolean;         // Threshold the image? If so all above fields are ignored.
-  ThresholdAmount: Int32;     // Threshold amount.
-  ThresholdInvert: Boolean;   // Threshold invert?
-  UseShadowForColor: Boolean; // Find and offset shadows by (-1,-1) and use most common color to recognize text with.  
-  MinCharacterMatch: Int32;   // Minimum hits required to match a character. Useful to remove smaller characters (like dots) that are often misread.
-end;
+function TSimpleOCR.Recognize(Area: TBox; Filter: TOCRFilter; Font: TFontSet): String;
+function TSimpleOCR.RecognizeStatic(Area: TBox; Filter: TOCRFilter; Font: TFontSet; MaxWalk: Integer = 20): String;
+function TSimpleOCR.RecognizeLines(Area: TBox; Filter: TOCRFilter; Font: TFontSet; out TextBounds: TBoxArray): TStringArray; overload;
+function TSimpleOCR.RecognizeLines(Area: TBox; Filter: TOCRFilter; Font: TFontSet): TStringArray; overload;
+function TSimpleOCR.RecognizeUpText(Area: TBox; Filter: TOCRFilter; Font: TFontSet; MaxWalk: Integer = 20): String;
+function TSimpleOCR.RecognizeNumber(Area: TBox; Filter: TOCRFilter; Font: TFontSet): Int64;
+
+function TSimpleOCR.LocateText(Area: TBox; Font: TFontSet; Filter: TOCRFilter; out Bounds: TBox): Single; overload;
+function TSimpleOCR.LocateText(Area: TBox; Font: TFontSet; out Bounds: TBox): Single; overload;
 ```
 
------
+----
 
-`IsStatic` parameter:
+## Filters
 
-If the starting position (X1,Y1) of the text never changes the text is static which greatly increases accuracy and speed. If this is the case you must pass the *pixel perfect* bounds of the text you want to read.
+- ### Color filter
 
------
+  Basic color finding. 
+  ```pascal
+  function TOCRColorFilter.Create(Colors, Tolerances: TIntegerArray): TOCRColorFilter; static;
+  function TOCRColorFilter.Create(Colors: TIntegerArray): TOCRColorFilter; static; overload;
+  ```
+  Example:
+  ```pascal
+  TOCRColorFilter.Create([255]); // Find color red
+  ```
+  ![Example](images/filter_color_200.png)
 
-`MaxWalk` parameter:
+  ---
 
-How far the OCR looks on the X axis before giving up. By default this is `40` so if no characaters are matched in 40 pixels the function finishes.
+- ### Invert Color Filter
 
------
+  Basic color finding but inverted.
+  ```pascal
+  function TOCRInvertColorFilter.Create(Colors, Tolerances: TIntegerArray): TOCRInvertColorFilter; static; overload;
+  function TOCRInvertColorFilter.Create(Colors: TIntegerArray): TOCRInvertColorFilter; static; overload;
+  ```
+  Example:
+  ```pascal
+  TOCRInvertColorFilter.Create([3358536, 0], [3, 10]); // Everything but brown and black (text shadow)
+  ```
+  ![Example](images/filter_invertcolor_200.png)
 
-`LocateText` function:
+  ---
 
-LocateText does not OCR! In simple terms a bitmap of the text is created (Using DrawText) and searched for. Color can be `-1` though each pixel of the text must be the exact same color.
+- ### Threshold Filter
+
+  If a pixel brightness value is greater than a threshold amount, it is assigned white, else it is assigned black.
+  ```pascal
+  function TOCRThresholdFilter.Create(Amount: Integer; Invert: Boolean = False): TOCRThresholdFilter; static;
+  ```
+  Example:
+  ```pascal
+  TOCRThresholdFilter.Create(10); // Orange and red are brighter than the brown background
+  ```
+  ![Example](images/filter_threshold_200.png)
+
+  ---
+
+- ### Shadow Filter
+
+  First shadows are found using average R,G,B value. `Shadow = (R+G+B div 3) < MaxShadowValue`
+
+  Next shadow pixels are offset by -1,-1. The most common color from the offset pixels is used for the search color.
+  ```pascal
+  function TOCRShadowFilter.Create(MaxShadowValue: Integer = 25; Tolerance: Integer = 5): TOCRShadowFilter; static; 
+  ```
+  Example:
+  ```pascal
+  TOCRShadowFilter.Create();
+  ```
+  ![Example](images/filter_shadow_400.png)
+  
+----
+
+## Locate Text
+
+The `LocateText` function does **not** OCR! An image of the desired text is generated and searched for. Again quite similar to Simba's `FindBitmap`.
+- A filter is not required if each pixel of the text is the exact same color. Although this is quite a lot slower.
+- Will not work if the spacing between characters is dynamic.
+
