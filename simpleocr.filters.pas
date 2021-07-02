@@ -16,7 +16,7 @@ type
   end;
 
   TSimpleOCRFilter = record
-    function ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; out Bounds: TBox): Boolean;
+    function ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; Invert: Boolean; out Bounds: TBox): Boolean;
     function ApplyShadowRule(var Matrix: T2DIntegerArray; MaxShadow: Int32; out Bounds: TBox): Boolean;
     function ApplyThresholdRule(var Matrix: T2DIntegerArray; Invert: Boolean; Amount: Integer; out Bounds: TBox): Boolean;
   end;
@@ -33,7 +33,10 @@ implementation
 uses
   simpleocr.tpa;
 
-function TSimpleOCRFilter.ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; out Bounds: TBox): Boolean;
+function TSimpleOCRFilter.ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; Invert: Boolean; out Bounds: TBox): Boolean;
+var
+  HIT: Int32  = FILTER_HIT;
+  MISS: Int32 = FILTER_MISS;
 var
   X, Y, Width, Height: Int32;
   I, H: Int32;
@@ -58,6 +61,9 @@ begin
     Colors[I].Tol := Sqr(ColorRuleArray[I].Tolerance);
   end;
 
+  if Invert then
+    Exch(HIT, MISS);
+
   Height := High(Client);
   Width  := High(Client[0]);
 
@@ -78,12 +84,12 @@ begin
             if (X > Bounds.X2) then Bounds.X2 := X;
             if (Y > Bounds.Y2) then Bounds.Y2 := Y;
 
-            Matrix[Y][X] := FILTER_HIT;
+            Matrix[Y][X] := HIT;
 
             goto Next;
           end;
 
-        Matrix[Y][X] := FILTER_MISS;
+        Matrix[Y][X] := MISS;
 
         Next:
       end;

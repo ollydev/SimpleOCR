@@ -51,7 +51,8 @@ type
     ANY_COLOR,
     COLOR,
     THRESHOLD,
-    SHADOW
+    SHADOW,
+    INVERT_COLOR
   );
 
   PCompareRules = ^TCompareRules;
@@ -68,6 +69,7 @@ type
         Color: Int32;
         Tolerance: Int32;
       end;
+      Invert: Boolean;
     end;
 
     ThresholdRule: packed record
@@ -559,6 +561,12 @@ begin
   if (FHeight > 0) then
     FWidth := Length(FClient[0]);
 
+  if (Int32(FCompareRules.Rule) < 0) or (Int32(FCompareRules.Rule) > Ord(High(EOCRRule))) then
+  begin
+    WriteLn('Invaild Filter: ', FCompareRules.Rule);
+    Halt;
+  end;
+
   Result := (FHeight > 0) and (FWidth > 0);
   if Result then
   begin
@@ -569,8 +577,8 @@ begin
 
     // Preprocess to binary image
     case FCompareRules.Rule of
-      EOCRRule.COLOR:
-        Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), FSearchArea);
+      EOCRRule.COLOR, EOCRRule.INVERT_COLOR:
+        Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), Filter.ColorRule.Invert, FSearchArea);
 
       EOCRRule.THRESHOLD:
         Result := SimpleOCRFilter.ApplyThresholdRule(FClient, Filter.ThresholdRule.Invert, Filter.ThresholdRule.Amount, FSearchArea);

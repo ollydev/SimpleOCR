@@ -145,7 +145,7 @@ begin
   SetLength(Weight, 0);
 end;
 
-procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer) ;
+procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer);
 var
   Lo, Hi, Pivot, T: Integer;
 begin
@@ -153,19 +153,19 @@ begin
   Hi := iHi;
   Pivot := A[(Lo + Hi) div 2];
   repeat
-    while A[Lo] < Pivot do Inc(Lo) ;
-    while A[Hi] > Pivot do Dec(Hi) ;
+    while A[Lo] < Pivot do Inc(Lo);
+    while A[Hi] > Pivot do Dec(Hi);
     if Lo <= Hi then
     begin
       T := A[Lo];
       A[Lo] := A[Hi];
       A[Hi] := T;
-      Inc(Lo) ;
-      Dec(Hi) ;
+      Inc(Lo);
+      Dec(Hi);
     end;
   until Lo > Hi;
-  if Hi > iLo then QuickSort(A, iLo, Hi) ;
-  if Lo < iHi then QuickSort(A, Lo, iHi) ;
+  if Hi > iLo then QuickSort(A, iLo, Hi);
+  if Lo < iHi then QuickSort(A, Lo, iHi);
 end;
 
 function Mode(Self: TIntegerArray): Int32;

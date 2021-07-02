@@ -84,6 +84,7 @@ initialization
     '      Color: Int32;                             ' + LineEnding +
     '      Tolerance: Int32;                         ' + LineEnding +
     '    end;                                        ' + LineEnding +
+    '    Invert: Boolean;                            ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  ThresholdRule: packed record                  ' + LineEnding +
@@ -116,13 +117,14 @@ initialization
   addGlobalFunc('function TSimpleOCR.LocateText(constref Matrix: T2DIntegerArray; constref Text: String; constref Font: TFontSet; constref CompareRules: TCompareRules; out Bounds: TBox): Single; overload; native;', @TSimpleOCR_LocateText);
   addGlobalFunc('function TSimpleOCR.Recognize(constref Matrix: T2DIntegerArray; constref CompareRules: TCompareRules; constref Font: TFontSet): String; overload; native;', @TSimpleOCR_Recognize);
   addGlobalFunc('function TSimpleOCR.RecognizeMulti(constref Matrix: T2DIntegerArray; constref CompareRules: TCompareRules; constref Font: TFontSet; out Bounds: TBoxArray): TStringArray; overload; native;', @TSimpleOCR_RecognizeMulti);
-  addGlobalFunc('function TSimpleOCR.RecognizeStatic(constref Matrix: T2DIntegerArray; CompareRules: TCompareRules; constref Font: TFontSet; constref MaxWalk: Int32 = 20): String; overload; native;', @TSimpleOCR_RecognizeStatic);
+  addGlobalFunc('function TSimpleOCR.RecognizeStatic(constref Matrix: T2DIntegerArray; constref CompareRules: TCompareRules; constref Font: TFontSet; constref MaxWalk: Int32 = 20): String; overload; native;', @TSimpleOCR_RecognizeStatic);
 
   addCode(
-    'type TOCRAnyColorRule  = type TCompareRules; // 0                                                                                                                                            ' + LineEnding +
-    'type TOCRColorRule     = type TCompareRules; // 1                                                                                                                                            ' + LineEnding +
-    'type TOCRThresholdRule = type TCompareRules; // 2                                                                                                                                            ' + LineEnding +
-    'type TOCRShadowRule    = type TCompareRules; // 3                                                                                                                                            ' + LineEnding +
+    'type TOCRAnyColorRule    = type TCompareRules; // 0                                                                                                                                          ' + LineEnding +
+    'type TOCRColorRule       = type TCompareRules; // 1                                                                                                                                          ' + LineEnding +
+    'type TOCRThresholdRule   = type TCompareRules; // 2                                                                                                                                          ' + LineEnding +
+    'type TOCRShadowRule      = type TCompareRules; // 3                                                                                                                                          ' + LineEnding +
+    'type TOCRInvertColorRule = type TCompareRules; // 4                                                                                                                                          ' + LineEnding +
     '                                                                                                                                                                                             ' + LineEnding +
     'function TOCRAnyColorRule.Create(Tolerance: Int32; MaxShadowValue: Int32 = 0): TOCRAnyColorRule; static;                                                                                     ' + LineEnding +
     'begin                                                                                                                                                                                        ' + LineEnding +
@@ -135,6 +137,9 @@ initialization
     'var                                                                                                                                                                                          ' + LineEnding +
     '  I: Int32;                                                                                                                                                                                  ' + LineEnding +
     'begin                                                                                                                                                                                        ' + LineEnding +
+    '  if Length(Colors) <> Length(Tolerances) then                                                                                                                                               ' + LineEnding +
+    '    raise "TOCRColorRule.Create: Length(Colors) <> Length(Tolerances)";                                                                                                                      ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
     '  Result.Rule := 1;                                                                                                                                                                          ' + LineEnding +
     '                                                                                                                                                                                             ' + LineEnding +
     '  SetLength(Result.ColorRule.Colors, Length(Colors));                                                                                                                                        ' + LineEnding +
@@ -150,6 +155,36 @@ initialization
     '  I: Int32;                                                                                                                                                                                  ' + LineEnding +
     'begin                                                                                                                                                                                        ' + LineEnding +
     '  Result.Rule := 1;                                                                                                                                                                          ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
+    '  SetLength(Result.ColorRule.Colors, Length(Colors));                                                                                                                                        ' + LineEnding +
+    '  for I := 0 to High(Colors) do                                                                                                                                                              ' + LineEnding +
+    '    Result.ColorRule.Colors[I].Color := Colors[I];                                                                                                                                           ' + LineEnding +
+    'end;                                                                                                                                                                                         ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
+    'function TOCRInvertColorRule.Create(Colors, Tolerances: TIntegerArray): TOCRInvertColorRule; static; overload;                                                                               ' + LineEnding +
+    'var                                                                                                                                                                                          ' + LineEnding +
+    '  I: Int32;                                                                                                                                                                                  ' + LineEnding +
+    'begin                                                                                                                                                                                        ' + LineEnding +
+    '  if Length(Colors) <> Length(Tolerances) then                                                                                                                                               ' + LineEnding +
+    '    raise "TOCRColorRule.Create: Length(Colors) <> Length(Tolerances)";                                                                                                                      ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
+    '  Result.Rule := 4;                                                                                                                                                                          ' + LineEnding +
+    '  Result.ColorRule.Invert := True;                                                                                                                                                           ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
+    '  SetLength(Result.ColorRule.Colors, Length(Colors));                                                                                                                                        ' + LineEnding +
+    '  for I := 0 to High(Colors) do                                                                                                                                                              ' + LineEnding +
+    '  begin                                                                                                                                                                                      ' + LineEnding +
+    '    Result.ColorRule.Colors[I].Color := Colors[I];                                                                                                                                           ' + LineEnding +
+    '    Result.ColorRule.Colors[I].Tolerance := Tolerances[I];                                                                                                                                   ' + LineEnding +
+    '  end;                                                                                                                                                                                       ' + LineEnding +
+    'end;                                                                                                                                                                                         ' + LineEnding +
+    '                                                                                                                                                                                             ' + LineEnding +
+    'function TOCRInvertColorRule.Create(Colors: TIntegerArray): TOCRInvertColorRule; static; overload;                                                                                           ' + LineEnding +
+    'var                                                                                                                                                                                          ' + LineEnding +
+    '  I: Int32;                                                                                                                                                                                  ' + LineEnding +
+    'begin                                                                                                                                                                                        ' + LineEnding +
+    '  Result.Rule := 4;                                                                                                                                                                          ' + LineEnding +
+    '  Result.ColorRule.Invert := True;                                                                                                                                                           ' + LineEnding +
     '                                                                                                                                                                                             ' + LineEnding +
     '  SetLength(Result.ColorRule.Colors, Length(Colors));                                                                                                                                        ' + LineEnding +
     '  for I := 0 to High(Colors) do                                                                                                                                                              ' + LineEnding +
