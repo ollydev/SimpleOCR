@@ -2,9 +2,9 @@
 
 SimpleOCR is a Simba plugin for reading text in Old School RuneScape originally developed by [@slackydev](https://github.com/slackydev/SimpleOCR).
 
-The algorithm is very much designed for the games "blocky" text where no anti aliasing is applied. Every pixel of the glyph must match for for a character to be recognized. 
+The algorithm is very much designed for OSRS (blocky text with no anti-aliasing). Every pixel of the glyph must match for for a character to be recognized. 
 
-The actual character recognition is quite similar to calling Simba's `FindBitmap` for every character in the fontset.
+The actual character recognition is quite similar to using Simba's `FindBitmap` for every character in the fontset.
 
 ----
 

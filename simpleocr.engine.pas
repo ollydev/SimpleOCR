@@ -86,6 +86,9 @@ type
     end;
 
     MinCharacterMatch: Char;
+
+    function IsEmpty: Boolean;
+    class function Empty: TOCRFilter; static;
   end;
 
   PSimpleOCR = ^TSimpleOCR;
@@ -97,8 +100,7 @@ type
     FHeight: Integer;
     FSearchArea: TBox;
 
-    function Init(const FontSet: TFontSet; const Static: Boolean): Boolean;
-    function Init(const FontSet: TFontSet; const Filter: TOCRFilter): Boolean;
+    function Init(const FontSet: TFontSet; const Filter: TOCRFilter; Static: Boolean): Boolean;
 
     function _RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
     function _RecognizeXY(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
@@ -123,6 +125,16 @@ implementation
 uses
   graphtype, intfgraphics, graphics, lazfileutils, math,
   simpleocr.filters;
+
+function TOCRFilter.IsEmpty: Boolean;
+begin
+  Result := CompareMem(@Self, @Self.Empty, SizeOf(Self));
+end;
+
+class function TOCRFilter.Empty: TOCRFilter;
+begin
+  Result := Default(TOCRFilter);
+end;
 
 function TFontSet.GetCharacterPoints(Character: Char): Integer;
 begin
@@ -163,6 +175,11 @@ var
   FontChar: TFontCharacter;
 begin
   FontPath := IncludeTrailingPathDelimiter(ExpandFileName(FontPath));
+  if (not DirectoryExists(FontPath)) then
+  begin
+    WriteLn('TFontSet.Load: Font does not exist "' + FontPath + '"');
+    Halt(1);
+  end;
 
   Self := Default(TFontSet);
   Self.Name := ExtractFileNameOnly(FontPath);
@@ -227,49 +244,38 @@ begin
   Image.Free();
 end;
 
-function TSimpleOCR.Init(const FontSet: TFontSet; const Static: Boolean): Boolean;
+function TSimpleOCR.Init(const FontSet: TFontSet; const Filter: TOCRFilter; Static: Boolean): Boolean;
 begin
   Result := MatrixDimensions(FClient, FWidth, FHeight);
 
   if Result then
   begin
     FFontSet := FontSet;
-    FSearchArea := Box(0, 0, FWidth - 1, FHeight - 1);
 
-    if not Static then
+    if not Filter.IsEmpty() then
     begin
+      case Filter.FilterType of
+        EOCRFilterType.COLOR, EOCRFilterType.INVERT_COLOR:
+          Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), Filter.ColorRule.Invert, FSearchArea);
+
+        EOCRFilterType.THRESHOLD:
+          Result := SimpleOCRFilter.ApplyThresholdRule(FClient, Filter.ThresholdRule.Invert, Filter.ThresholdRule.Amount, FSearchArea);
+
+        EOCRFilterType.SHADOW:
+          Result := SimpleOCRFilter.ApplyShadowRule(FClient, Filter.ShadowRule.MaxShadowValue, Filter.ShadowRule.Tolerance, FSearchArea);
+      end;
+    end;
+
+    if Static then
+      FSearchArea := Box(0, 0, FWidth - 1, FHeight - 1)
+    else
+    begin
+      // Filter sets the bounds
       FSearchArea.X1 -= FontSet.MaxWidth div 2;
       FSearchArea.Y1 -= FFontSet.MaxHeight div 2;
       FSearchArea.X2 += FontSet.MaxWidth div 2;
       FSearchArea.Y2 += FFontSet.MaxHeight div 2;
     end;
-  end;
-end;
-
-function TSimpleOCR.Init(const FontSet: TFontSet; const Filter: TOCRFilter): Boolean;
-begin
-  Result := MatrixDimensions(FClient, FWidth, FHeight);
-
-  if Result then
-  begin
-    FFontSet := FontSet;
-
-    case Filter.FilterType of
-      EOCRFilterType.COLOR,
-      EOCRFilterType.INVERT_COLOR:
-        Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), Filter.ColorRule.Invert, FSearchArea);
-
-      EOCRFilterType.THRESHOLD:
-        Result := SimpleOCRFilter.ApplyThresholdRule(FClient, Filter.ThresholdRule.Invert, Filter.ThresholdRule.Amount, FSearchArea);
-
-      EOCRFilterType.SHADOW:
-        Result := SimpleOCRFilter.ApplyShadowRule(FClient, Filter.ShadowRule.MaxShadowValue, Filter.ShadowRule.Tolerance, FSearchArea);
-    end;
-
-    FSearchArea.X1 -= FontSet.MaxWidth div 2;
-    FSearchArea.Y1 -= FFontSet.MaxHeight div 2;
-    FSearchArea.X2 += FontSet.MaxWidth div 2;
-    FSearchArea.Y2 += FFontSet.MaxHeight div 2;
   end;
 end;
 
@@ -521,7 +527,7 @@ begin
   TextMatrix := Self.TextToMatrix(Text, FontSet);
   if not MatrixDimensions(TextMatrix, TextWidth, TextHeight) then
     Exit;
-  if not Self.Init(FontSet, False) then
+  if not Self.Init(FontSet, TOCRFilter.Empty, True) then
     Exit;
 
   SetLength(CharacterIndices, TextWidth * TextHeight);
@@ -609,7 +615,7 @@ end;
 function TSimpleOCR.LocateText(const Text: String; const FontSet: TFontSet; const Filter: TOCRFilter; out Bounds: TBox): Single;
 begin
   Result := 0;
-  if Self.Init(FontSet, Filter) then
+  if Self.Init(FontSet, Filter, True) then
     Result := LocateText(Text, FontSet, Bounds);
 end;
 
@@ -619,7 +625,7 @@ var
   Bounds: TBox;
 begin
   Result := '';
-  if Self.Init(FontSet, Filter) then
+  if Self.Init(FontSet, Filter, False) then
     Result := _RecognizeXY(FSearchArea, FontSet.CharacterPoints[Filter.MinCharacterMatch], $FFFFFF, Hits, Bounds);
 end;
 
@@ -719,7 +725,7 @@ begin
     Halt(1);
   end;
 
-  if Self.Init(FontSet, True) then
+  if Self.Init(FontSet, TOCRFilter.Empty, True) then
   begin
     MinPointsNeeded := FontSet.CharacterPoints[Filter.MinCharacterMatch];
     Space := 0;
@@ -767,7 +773,7 @@ var
   Bounds: TBox;
 begin
   Result := '';
-  if Self.Init(FontSet, Filter) then
+  if Self.Init(FontSet, Filter, True) then
     Result := Self._RecognizeX(FSearchArea, FontSet.CharacterPoints[Filter.MinCharacterMatch], MaxWalk, Hits, Bounds);
 end;
 
@@ -781,7 +787,7 @@ begin
   Result := nil;
   TextBounds := nil;
 
-  if Self.Init(FontSet, Filter) then
+  if Self.Init(FontSet, Filter, False) then
   begin
     MinCharacterPoints := FontSet.CharacterPoints[','];
 

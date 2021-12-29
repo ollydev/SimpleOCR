@@ -21,43 +21,38 @@ jobs:
         config:            
           - name: Windows 64
             os: windows-latest
-            cpu: x86_64
             build-mode: WIN64
             binary: libsimpleocr64.dll
             
           - name: Windows 32
             os: windows-latest
-            cpu: i386
             build-mode: WIN32
             binary: libsimpleocr32.dll
 
           - name: Linux 64
             os: ubuntu-latest
-            cpu: x86_64
             build-mode: LINUX64
             binary: libsimpleocr64.so
           
           - name: AArch64  
             os: ubuntu-latest
-            cpu: aarch64
             build-mode: AARCH64
             binary: libsimpleocr64.so.aarch64
             
           - name: MacOS 64
             os: macos-latest
-            cpu: x86_64
             build-mode: DARWIN64
             binary: libsimpleocr64.dylib
             
     steps:
-      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v3.0.2
       
       - name: Install Lazarus
-        uses: ollydev/setup-lazarus-fpcup@v2.1
+        uses: ollydev/setup-lazarus-fpcup@v2.5
         with:
-          cpu: ${{ matrix.config.cpu }}
-          laz-branch: lazarus_2_2_0_RC1
-          fpc-branch: release_3_2_2_rc1
+          laz-branch: lazarus_2_2_2
+          fpc-branch: release_3_2_2
+          fpcup-release: v2.2.0h
           
       - name: Build SimpleOCR
         run: |
@@ -72,7 +67,7 @@ jobs:
           ./tester.exe
 
       - name: Upload Binary 
-        uses: actions/upload-artifact@v2.2.4
+        uses: actions/upload-artifact@v2.3.1
         with:
           name: ${{ matrix.config.binary }}
           path: ${{ matrix.config.binary }}

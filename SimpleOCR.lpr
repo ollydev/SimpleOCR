@@ -130,7 +130,7 @@ initialization
     'end;',
     'TSimpleOCR');
 
-  addGlobalFunc('procedure TFontSet.Load(constref Font: String; constref Space: Integer = 4); native;', @TFontSet_Load);
+  addGlobalFunc('procedure TFontSet.Load(constref Font: String; Space: Integer = 4); native;', @TFontSet_Load);
 
   addGlobalFunc('function TSimpleOCR.TextToMatrix(constref Text: String; constref Font: TFontSet): T2DIntegerArray; native;', @TSimpleOCR_TextToMatrix);
   addGlobalFunc('function TSimpleOCR.TextToTPA(constref Text: String; constref Font: TFontSet): TPointArray; native;', @TSimpleOCR_TextToTPA);
@@ -141,8 +141,8 @@ initialization
   addGlobalFunc('function TSimpleOCR._Recognize(constref Filter: TOCRFilter; constref Font: TFontSet): String; native;', @TSimpleOCR_Recognize);
   addGlobalFunc('function TSimpleOCR._RecognizeLines(constref Filter: TOCRFilter; constref Font: TFontSet; out Bounds: TBoxArray): TStringArray; overload; native;', @TSimpleOCR_RecognizeLines);
   addGlobalFunc('function TSimpleOCR._RecognizeLines(constref Filter: TOCRFilter; constref Font: TFontSet): TStringArray; overload; native;', @TSimpleOCR_RecognizeLinesEx);
-  addGlobalFunc('function TSimpleOCR._RecognizeStatic(constref Filter: TOCRFilter; constref Font: TFontSet; constref MaxWalk: Integer = 20): String; native;', @TSimpleOCR_RecognizeStatic);
-  addGlobalFunc('function TSimpleOCR._RecognizeUpText(constref Filter: TOCRFilter; constref Font: TFontSet; constref MaxWalk: Integer = 20): String; native;', @TSimpleOCR_RecognizeUpText);
+  addGlobalFunc('function TSimpleOCR._RecognizeStatic(constref Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String; native;', @TSimpleOCR_RecognizeStatic);
+  addGlobalFunc('function TSimpleOCR._RecognizeUpText(constref Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String; native;', @TSimpleOCR_RecognizeUpText);
 
   addCode(
     'type TOCRUpTextFilter      = type TOCRFilter; // 0                                                                                                                                  ' + LineEnding +
@@ -237,14 +237,14 @@ initialization
     '  Result := Self._Recognize(Filter, Font);                                                                                                                                          ' + LineEnding +
     'end;                                                                                                                                                                                ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
-    'function TSimpleOCR.RecognizeStatic(constref Area: TBox; constref Filter: TOCRFilter; constref Font: TFontSet; constref MaxWalk: Integer = 20): String;                             ' + LineEnding +
+    'function TSimpleOCR.RecognizeStatic(constref Area: TBox; constref Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String;                             ' + LineEnding +
     'begin                                                                                                                                                                               ' + LineEnding +
     '  Self.Client := GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2);                                                                                                               ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
     '  Result := Self._RecognizeStatic(Filter, Font, MaxWalk);                                                                                                                           ' + LineEnding +
     'end;                                                                                                                                                                                ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
-    'function TSimpleOCR.RecognizeLines(constref Area: TBox; constref Filter: TOCRFilter; constref Font: TFontSet; var Bounds: TBoxArray): TStringArray; overload;                       ' + LineEnding +
+    'function TSimpleOCR.RecognizeLines(constref Area: TBox; constref Filter: TOCRFilter; constref Font: TFontSet; out Bounds: TBoxArray): TStringArray; overload;                       ' + LineEnding +
     'var                                                                                                                                                                                 ' + LineEnding +
     '  I: Integer;                                                                                                                                                                       ' + LineEnding +
     'begin                                                                                                                                                                               ' + LineEnding +
@@ -282,14 +282,14 @@ initialization
     '    Result := StrToInt(Text);                                                                                                                                                       ' + LineEnding +
     'end;                                                                                                                                                                                ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
-    'function TSimpleOCR.RecognizeUpText(const Area: TBox; const Filter: TOCRFilter; const Font: TFontSet; const MaxWalk: Integer = 20): String;                                         ' + LineEnding +
+    'function TSimpleOCR.RecognizeUpText(constref Area: TBox; constref Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String;                                         ' + LineEnding +
     'begin                                                                                                                                                                               ' + LineEnding +
     '  Self.Client := GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2);                                                                                                               ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
     '  Result := Self._RecognizeUpText(Filter, Font, MaxWalk);                                                                                                                           ' + LineEnding +
     'end;                                                                                                                                                                                ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
-    'function TSimpleOCR.LocateText(constref Area: TBox; constref Text: String; constref Font: TFontSet; constref Filter: TOCRFilter; out Bounds: TBox): Single; overload;               ' + LineEnding +
+    'function TSimpleOCR.LocateText(constref Area: TBox; Text: String; constref Font: TFontSet; constref Filter: TOCRFilter; out Bounds: TBox): Single; overload;               ' + LineEnding +
     'begin                                                                                                                                                                               ' + LineEnding +
     '  Self.Client := GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2);                                                                                                               ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
@@ -301,7 +301,7 @@ initialization
     '  Bounds.Y2 += Area.Y1;                                                                                                                                                             ' + LineEnding +
     'end;                                                                                                                                                                                ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +
-    'function TSimpleOCR.LocateText(constref Area: TBox; constref Text: String; constref Font: TFontSet; out Bounds: TBox): Single; overload;                                            ' + LineEnding +
+    'function TSimpleOCR.LocateText(constref Area: TBox; Text: String; constref Font: TFontSet; out Bounds: TBox): Single; overload;                                            ' + LineEnding +
     'begin                                                                                                                                                                               ' + LineEnding +
     '  Self.Client := GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2);                                                                                                               ' + LineEnding +
     '                                                                                                                                                                                    ' + LineEnding +

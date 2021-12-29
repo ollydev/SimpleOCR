@@ -1,4 +1,4 @@
-// Extremely simple testing to make sure nothing is broken when making changes.
+// Simple tests to make sure nothing is broken when changes are made.
 
 program tester;
 
@@ -69,7 +69,7 @@ var
   TextBounds: TBoxArray;
   Lines: TStringArray;
 begin
-  SimpleOCR := TSimpleOCR.Create(LoadImage('images/chat.png'));
+  SimpleOCR := TSimpleOCR.Create(LoadImage('images/options.png'));
   Font.Load('../fonts/Quill 8');
 
   Lines := SimpleOCR.RecognizeLines(Filter, Font, TextBounds);
@@ -122,6 +122,26 @@ begin
   Assert(SimpleOCR.Recognize(Filter, Font) = '53');
 end;
 
+procedure Test_Static;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    UpTextFilter: ();
+    ColorRule: (Colors: ((Color: 0; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+var
+  SimpleOCR: TSimpleOCR;
+  Font: TFontSet;
+begin
+  SimpleOCR := TSimpleOCR.Create(LoadImage('images/chat.png'));
+  Font.Load('../fonts/Plain 12');
+
+  Assert(SimpleOCR.RecognizeStatic(Filter, Font) = 'You have correctly entered your PIN.');
+end;
+
 begin
   try
     Test_Lines();
@@ -143,6 +163,14 @@ begin
     Test_Shadow();
   except
     WriteLn('Shadow test failed');
+
+    ExitCode := 1;
+  end;
+
+  try
+    Test_Static();
+  except
+    WriteLn('Static test failed');
 
     ExitCode := 1;
   end;
