@@ -8,4 +8,4 @@
 *.exe
 backup
 lib
-/fonts/
+/tester/fonts

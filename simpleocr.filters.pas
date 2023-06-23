@@ -1,94 +1,123 @@
 unit simpleocr.filters;
+{==============================================================================]
+  Copyright (c) 2021, Jarl `slacky` Holta
+  Project: SimpleOCR
+  Project URL: https://github.com/slackydev/SimpleOCR
+  License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
+[==============================================================================}
 
 {$i simpleocr.inc}
 
 interface
 
 uses
-  classes, sysutils,
+  Classes, SysUtils,
   simpleocr.types;
 
 type
-  TColorRuleArray = array of packed record
-    Color: Int32;
-    Tolerance: Int32;
+  EOCRFilterType = (
+    ANY_COLOR,
+    COLOR,
+    THRESHOLD,
+    SHADOW,
+    INVERT_COLOR
+  );
+
+  POCRFilter = ^TOCRFilter;
+  TOCRFilter = packed record
+    FilterType: EOCRFilterType;
+
+    AnyColorFilter: packed record
+      MaxShadowValue: Integer;
+      Tolerance: Integer;
+    end;
+
+    ColorRule: packed record
+      Colors: array of packed record
+        Color: Integer;
+        Tolerance: Integer;
+      end;
+      Invert: Boolean;
+    end;
+
+    ThresholdRule: packed record
+      Amount: Integer;
+      Invert: Boolean;
+    end;
+
+    ShadowRule: packed record
+      MaxShadowValue: Integer;
+      Tolerance: Integer;
+    end;
+
+    MinCharacterMatch: Char;
   end;
 
-  TSimpleOCRFilter = record
-    function ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; Invert: Boolean; out Bounds: TBox): Boolean;
-    function ApplyShadowRule(var Matrix: T2DIntegerArray; MaxShadow: Int32; Tolerance: Int32; out Bounds: TBox): Boolean;
-    function ApplyThresholdRule(var Matrix: T2DIntegerArray; Invert: Boolean; Amount: Integer; out Bounds: TBox): Boolean;
-  end;
-
-const
-  FILTER_HIT  = 0;
-  FILTER_MISS = -1;
-
-var
-  SimpleOCRFilter: TSimpleOCRFilter;
+function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
+function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
+function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
 
 implementation
 
-uses
-  simpleocr.tpa;
+function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
 
-function TSimpleOCRFilter.ApplyColorRule(var Matrix: T2DIntegerArray; ColorRuleArray: TColorRuleArray; Invert: Boolean; out Bounds: TBox): Boolean;
-var
-  HIT: Int32  = FILTER_HIT;
-  MISS: Int32 = FILTER_MISS;
-var
-  X, Y, Width, Height: Int32;
-  I, H: Int32;
-  Colors: array of record
-    R, G, B: UInt8;
-    Tol: Int32;
+  function SimilarColors(const Color1, Color2: TRGB32; const Tolerance: Integer): Boolean; inline;
+  begin
+    Result := Sqr(Color1.R - Color2.R) + Sqr(Color1.G - Color2.G) + Sqr(Color1.B - Color2.B) <= Tolerance;
   end;
-  Client: TRGB32Matrix absolute Matrix;
+
+var
+  X, Y, Width, Height: Integer;
+  I, H: Integer;
+  Hit, Miss: Integer;
+  Tols: TIntegerArray;
 label
   Next;
 begin
-  H := High(ColorRuleArray);
-  if (H = -1) then
-    Exit(False);
+  H := High(Filter.ColorRule.Colors);
 
-  SetLength(Colors, H + 1);
-  for I := 0 to H do
-  begin
-    Colors[I].B := ColorRuleArray[I].Color and $FF;
-    Colors[I].G := ColorRuleArray[I].Color shr 8 and $FF;
-    Colors[I].R := ColorRuleArray[I].Color shr 16 and $FF;
-    Colors[I].Tol := ColorRuleArray[I].Tolerance;
-  end;
-
-  if Invert then
-    Exch(HIT, MISS);
-
-  Height := High(Client);
-  Width  := High(Client[0]);
+  Height := High(Matrix);
+  Width  := High(Matrix[0]);
 
   Bounds.X1 := $FFFFFF;
   Bounds.Y1 := $FFFFFF;
   Bounds.X2 := 0;
   Bounds.Y2 := 0;
 
+  case Filter.ColorRule.Invert of
+    True:
+      begin
+        Hit  := $000000;
+        Miss := $FFFFFF;
+      end;
+    False:
+      begin
+        Hit  := $FFFFFF;
+        Miss := $000000;
+      end;
+  end;
+
+  SetLength(Tols, H+1);
+  for I:=0 to H do
+    Tols[I] := Sqr(Filter.ColorRule.Colors[I].Tolerance);
+
   for Y := 0 to Height do
     for X := 0 to Width do
-      with Client[Y][X] do
       begin
         for I := 0 to H do
-          if (Sqr(R - Colors[I].R) + Sqr(G - Colors[I].G) + Sqr(B - Colors[I].B) <= Colors[I].Tol) then
+          if SimilarColors(TRGB32(Matrix[Y, X]), TRGB32(Filter.ColorRule.Colors[I].Color), Tols[I]) then
           begin
             if (X < Bounds.X1) then Bounds.X1 := X;
             if (Y < Bounds.Y1) then Bounds.Y1 := Y;
             if (X > Bounds.X2) then Bounds.X2 := X;
             if (Y > Bounds.Y2) then Bounds.Y2 := Y;
 
-            Matrix[Y][X] := HIT;
+            Matrix[Y, X] := Hit;
 
             goto Next;
           end;
 
-        Matrix[Y][X] := MISS;
+        Matrix[Y, X] := Miss;
 
         Next:
       end;
@@ -96,63 +125,16 @@ begin
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
 end;
 
-function TSimpleOCRFilter.ApplyShadowRule(var Matrix: T2DIntegerArray; MaxShadow: Int32; Tolerance: Int32; out Bounds: TBox): Boolean;
-
-  function IsShadow(const X, Y: Int32): Boolean; inline;
-  begin
-    with TRGB32(Matrix[Y][X]) do
-      Result := ((R + G + B) div 3) < MaxShadow;
-  end;
-
+function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
 var
-  X, Y, Width, Height: Int32;
-  Size, Count: Int32;
-  Colors: TIntegerArray;
-  ColorRule: TColorRuleArray;
-begin
-  Count := 0;
-  Size := 256;
-  SetLength(Colors, Size);
-
-  Height := High(Matrix);
-  Width := High(Matrix[0]);
-
-  for Y := 1 to Height do
-    for X := 1 to Width do
-    begin
-      if IsShadow(X, Y) and (not IsShadow(X-1, Y-1)) then
-      begin
-        Colors[Count] := Matrix[Y-1][X-1];
-        Inc(Count);
-
-        if (Count = Size) then
-        begin
-          Size *= 2;
-          SetLength(Colors, Size);
-        end;
-      end;
-    end;
-  if Count = 0 then
-    Exit(False);
-
-  SetLength(ColorRule, 1);
-  ColorRule[0].Color := Mode(Colors, Count-1);
-  ColorRule[0].Tolerance := Tolerance;
-
-  Result := ApplyColorRule(Matrix, ColorRule, False, Bounds);
-end;
-
-function TSimpleOCRFilter.ApplyThresholdRule(var Matrix: T2DIntegerArray; Invert: Boolean; Amount: Integer; out Bounds: TBox): Boolean;
-var
-  I, Size, X, Y, W, H: Int32;
+  X, Y, W, H: Integer;
   Threshold: UInt8;
   Counter: Int64;
-  Tab: array [0..256] of Int32;
-  Temp: T2DIntegerArray;
+  Temp: TIntegerMatrix;
+  Hit, Miss: Integer;
 begin
   H := Length(Matrix);
   W := Length(Matrix[0]);
-  Size := (W * H) - 1;
 
   SetLength(Temp, H, W);
 
@@ -166,24 +148,26 @@ begin
   for Y := 0 to H do
     for X := 0 to W do
     begin
-      with TRGB32(Matrix[Y][X]) do
-        Temp[Y][X] := (B + G + R) div 3;
+      with TRGB32(Matrix[Y, X]) do
+        Temp[Y, X] := (B + G + R) div 3;
 
-      Counter += Temp[Y][X];
+      Counter += Temp[Y, X];
     end;
 
-  Threshold := (Counter div Size) + Amount;
-  for I := 0 to (Threshold - 1) do
-    if Invert then
-      Tab[I] := FILTER_HIT
-    else
-      Tab[I] := FILTER_MISS;
+  Threshold := (Counter div ((W * H) - 1)) + Filter.ThresholdRule.Amount;
 
-  for I := Threshold to 255 do
-    if Invert then
-      Tab[I] := FILTER_MISS
-    else
-      Tab[I] := FILTER_HIT;
+  case Filter.ThresholdRule.Invert of
+    True:
+      begin
+        Hit  := $000000;
+        Miss := $FFFFFF;
+      end;
+    False:
+      begin
+        Hit  := $FFFFFF;
+        Miss := $000000;
+      end;
+  end;
 
   Bounds.X1 := $FFFFFF;
   Bounds.Y1 := $FFFFFF;
@@ -193,18 +177,70 @@ begin
   for Y := 0 to H do
     for X := 0 to W do
     begin
-      Matrix[Y][X] := Tab[Temp[Y][X]];
-
-      if (Matrix[Y][X] = FILTER_HIT) then
+      if (Temp[Y, X] > Threshold) then
       begin
+        Matrix[Y, X] := Hit;
+
         if (X < Bounds.X1) then Bounds.X1 := X;
         if (Y < Bounds.Y1) then Bounds.Y1 := Y;
         if (X > Bounds.X2) then Bounds.X2 := X;
         if (Y > Bounds.Y2) then Bounds.Y2 := Y;
-      end;
+      end else
+        Matrix[Y, X] := Miss;
     end;
 
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
+end;
+
+function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
+
+  function IsShadow(const X, Y: Integer): Boolean; inline;
+  begin
+    with TRGB32(Matrix[Y, X]) do
+      Result := ((R + G + B) div 3) < Filter.ShadowRule.MaxShadowValue;
+  end;
+
+var
+  X, Y, Width, Height: Integer;
+  Size, Count: Integer;
+  Colors: TIntegerArray;
+begin
+  Result := False;
+
+  Size := 0;
+  Count := 0;
+  Colors := [];
+
+  Height := High(Matrix);
+  Width := High(Matrix[0]);
+
+  for Y := 1 to Height do
+    for X := 1 to Width do
+    begin
+      if IsShadow(X, Y) and (not IsShadow(X-1, Y-1)) then
+      begin
+        if (Count = Size) then
+        begin
+          Size := (Size + 32) * 2;
+          SetLength(Colors, Size);
+        end;
+
+        Colors[Count] := Matrix[Y-1, X-1];
+        Inc(Count);
+      end;
+    end;
+
+  if (Count > 0) then
+  begin
+    SetLength(Filter.ColorRule.Colors, 1);
+    with Filter.ColorRule.Colors[0] do
+    begin
+      Color := Mode(Colors, Count - 1);
+      Tolerance := Filter.ShadowRule.Tolerance;
+    end;
+
+    Result := ApplyColorFilter(Filter, Matrix, Bounds);
+  end;
 end;
 
 end.

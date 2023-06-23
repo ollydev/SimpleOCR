@@ -5,13 +5,21 @@ unit simpleocr.engine;
   Project URL: https://github.com/slackydev/SimpleOCR
   License: GNU Lesser GPL (http://www.gnu.org/licenses/lgpl.html)
 [==============================================================================}
+
 {$i simpleocr.inc}
+
+{$IFOPT D-} // No debug info = enable max optimization
+  {$OPTIMIZATION LEVEL4}
+
+  {$OPTIMIZATION noORDERFIELDS} // need same field ordering in script
+  {$OPTIMIZATION noDEADSTORE}   // buggy as of FPC .2.2
+{$ENDIF}
 
 interface
 
 uses
-  classes, sysutils,
-  simpleocr.tpa, simpleocr.types;
+  Classes, SysUtils,
+  simpleocr.types, simpleocr.filters;
 
 const
   FONTSET_SPACE = #32;
@@ -37,7 +45,7 @@ type
   PFontSet = ^TFontSet;
   TFontSet = packed record
   private
-    function GetCharacterPoints(Character: Char): Integer; inline;
+    function GetCharacterPoints(const Character: Char): Integer; inline;
   public
     Name: String;
     Characters: array[FONTSET_START..FONTSET_END] of TFontCharacter;
@@ -50,93 +58,42 @@ type
     procedure Load(FontPath: String; Space: Integer = 4);
   end;
 
-  EOCRFilterType = (
-    UPTEXT,
-    COLOR,
-    THRESHOLD,
-    SHADOW,
-    INVERT_COLOR
-  );
-
-  POCRFilter = ^TOCRFilter;
-  TOCRFilter = packed record
-    FilterType: EOCRFilterType;
-
-    UpTextFilter: packed record
-      MaxShadowValue: Int32;
-      Tolerance: Int32;
-    end;
-
-    ColorRule: packed record
-      Colors: array of packed record
-        Color: Integer;
-        Tolerance: Integer;
-      end;
-      Invert: Boolean;
-    end;
-
-    ThresholdRule: packed record
-      Amount: Integer;
-      Invert: Boolean;
-    end;
-
-    ShadowRule: packed record
-      MaxShadowValue: Integer;
-      Tolerance: Integer;
-    end;
-
-    MinCharacterMatch: Char;
-
-    function IsEmpty: Boolean;
-    class function Empty: TOCRFilter; static;
-  end;
-
   PSimpleOCR = ^TSimpleOCR;
   TSimpleOCR = packed record
   private
     FFontSet: TFontSet;
-    FClient: T2DIntegerArray;
+    FClient: TIntegerMatrix;
+    // "Internal data"
     FWidth: Integer;
     FHeight: Integer;
     FSearchArea: TBox;
+    FBinaryImage: Boolean;
+    FMaxShadowValue: Integer;
+    FTolerance: Integer;
 
-    function Init(const FontSet: TFontSet; const Filter: TOCRFilter; Static: Boolean): Boolean;
+    function Init(Matrix: TIntegerMatrix; constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 
     function _RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
     function _RecognizeXY(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
   public
-    class function Create(const Client: T2DIntegerArray): TSimpleOCR; static;
+    function TextToMatrix(Text: String; constref FontSet: TFontSet): TIntegerMatrix;
+    function TextToTPA(Text: String; constref FontSet: TFontSet): TPointArray;
 
-    function TextToMatrix(const Text: String; const FontSet: TFontSet): T2DIntegerArray;
-    function TextToTPA(const Text: String; const FontSet: TFontSet): TPointArray;
+    function LocateText(Matrix: TIntegerMatrix; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter; out Bounds: TBox): Single; overload;
+    function LocateText(Matrix: TIntegerMatrix; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter; MinMatch: Single = 1): Boolean; overload;
 
-    function LocateText(const Text: String; const FontSet: TFontSet; out Bounds: TBox): Single; overload;
-    function LocateText(const Text: String; const FontSet: TFontSet; const Filter: TOCRFilter; out Bounds: TBox): Single; overload;
-
-    function Recognize(const Filter: TOCRFilter; const FontSet: TFontSet): String;
-    function RecognizeStatic(const Filter: TOCRFilter; const FontSet: TFontSet; const MaxWalk: Integer = 20): String;
-    function RecognizeLines(const Filter: TOCRFilter; const FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray; overload;
-    function RecognizeLines(const Filter: TOCRFilter; const FontSet: TFontSet): TStringArray; overload;
-    function RecognizeUpText(const Filter: TOCRFilter; const FontSet: TFontSet; const MaxWalk: Integer = 20): String;
+    function Recognize(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet): String;
+    function RecognizeStatic(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; MaxWalk: Integer = 20): String;
+    function RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray; overload;
+    function RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray; overload;
   end;
 
 implementation
 
 uses
-  graphtype, intfgraphics, graphics, lazfileutils, math,
-  simpleocr.filters;
+  graphtype, intfgraphics, graphics, math;
 
-function TOCRFilter.IsEmpty: Boolean;
-begin
-  Result := CompareMem(@Self, @Self.Empty, SizeOf(Self));
-end;
-
-class function TOCRFilter.Empty: TOCRFilter;
-begin
-  Result := Default(TOCRFilter);
-end;
-
-function TFontSet.GetCharacterPoints(Character: Char): Integer;
+function TFontSet.GetCharacterPoints(const Character: Char): Integer;
 begin
   if (Character in [FONTSET_START..FONTSET_END]) then
     Result := Characters[Character].CharacterPointsLength
@@ -182,7 +139,7 @@ begin
   end;
 
   Self := Default(TFontSet);
-  Self.Name := ExtractFileNameOnly(FontPath);
+  Self.Name := ExtractFileName(ExcludeTrailingPathDelimiter(FontPath));
   Self.SpaceWidth := Space;
 
   Description.Init_BPP32_B8G8R8_BIO_TTB(0, 0);
@@ -193,77 +150,104 @@ begin
   for I := 32 to 126 do
   begin
     if FileExists(FontPath + IntToStr(I) + '.bmp') then
+      Image.LoadFromFile(FontPath + IntToStr(I) + '.bmp')
+    else
+    if FileExists(FontPath + IntToStr(I) + '.png') then
+      Image.LoadFromFile(FontPath + IntToStr(I) + '.png')
+    else
+      Continue;
+
+    FontChar := Default(TFontCharacter);
+    FontChar.ImageWidth := Image.Width;
+    FontChar.ImageHeight := Image.Height;
+    FontChar.Value := Chr(I);
+
+    if (FontChar.Value = FONTSET_SPACE) then
     begin
-      Image.LoadFromFile(FontPath + IntToStr(I) + '.bmp');
+      FontChar.Width := Image.Width;
+      FontChar.Height := Image.Height;
+    end else
+    begin
+      FontChar.CharacterPoints := FindColor(Image, $FFFFFF);
+      FontChar.CharacterBounds := TPABounds(FontChar.CharacterPoints);
+      FontChar.ShadowPoints := FindColor(Image, $0000FF);
 
-      FontChar := Default(TFontCharacter);
-      FontChar.ImageWidth := Image.Width;
-      FontChar.ImageHeight := Image.Height;
-      FontChar.Value := Chr(I);
-
-      if (Chr(I) = #32) then
+      if (FontChar.CharacterBounds.X1 > 0) then
       begin
-        FontChar.Width := Image.Width;
-        FontChar.Height := Image.Height;
-      end else
-      begin
-        FontChar.CharacterPoints := FindColor(Image, $FFFFFF);
-        FontChar.CharacterBounds := TPABounds(FontChar.CharacterPoints);
-        FontChar.ShadowPoints := FindColor(Image, $0000FF);
+        OffsetTPA(FontChar.CharacterPoints, -FontChar.CharacterBounds.X1, 0);
+        OffsetTPA(FontChar.ShadowPoints, -FontChar.CharacterBounds.X1, 0);
 
-        if (FontChar.CharacterBounds.X1 > 0) then
-        begin
-          OffsetTPA(FontChar.CharacterPoints, -FontChar.CharacterBounds.X1, 0);
-          OffsetTPA(FontChar.ShadowPoints, -FontChar.CharacterBounds.X1, 0);
-
-          SortTPAByColumn(FontChar.CharacterPoints);
-        end;
-
-        FontChar.BackgroundPoints := InvertTPA(FontChar.CharacterPoints + FontChar.ShadowPoints);
-        FontChar.BackgroundPointsLength := Length(FontChar.BackgroundPoints);
-
-        with TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints) do
-        begin
-          FontChar.Width  := X2-X1+1;
-          FontChar.Height := Y2-Y1+1;
-        end;
+        SortTPAByColumn(FontChar.CharacterPoints);
       end;
 
-      if (FontChar.Width > MaxWidth) then
-        MaxWidth := FontChar.Width;
-      if (FontChar.Height > MaxHeight) then
-        MaxHeight := FontChar.Height;
+      FontChar.BackgroundPoints := InvertTPA(FontChar.CharacterPoints + FontChar.ShadowPoints);
+      FontChar.BackgroundPointsLength := Length(FontChar.BackgroundPoints);
 
-      FontChar.TotalBounds := TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints + FontChar.BackgroundPoints);
-      FontChar.CharacterPointsLength := Length(FontChar.CharacterPoints);
-
-      Self.Characters[FontChar.Value] := FontChar;
+      with TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints) do
+      begin
+        FontChar.Width  := X2-X1+1;
+        FontChar.Height := Y2-Y1+1;
+      end;
     end;
+
+    if (FontChar.Width > MaxWidth) then
+      MaxWidth := FontChar.Width;
+    if (FontChar.Height > MaxHeight) then
+      MaxHeight := FontChar.Height;
+
+    FontChar.TotalBounds := TPABounds(FontChar.CharacterPoints + FontChar.ShadowPoints + FontChar.BackgroundPoints);
+    FontChar.CharacterPointsLength := Length(FontChar.CharacterPoints);
+
+    Self.Characters[FontChar.Value] := FontChar;
   end;
 
   Image.Free();
 end;
 
-function TSimpleOCR.Init(const FontSet: TFontSet; const Filter: TOCRFilter; Static: Boolean): Boolean;
+function TSimpleOCR.Init(Matrix: TIntegerMatrix; constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 begin
-  Result := MatrixDimensions(FClient, FWidth, FHeight);
+  Result := MatrixDimensions(Matrix, FWidth, FHeight);
 
   if Result then
   begin
+    FClient := Matrix;
     FFontSet := FontSet;
 
-    if not Filter.IsEmpty() then
-    begin
-      case Filter.FilterType of
-        EOCRFilterType.COLOR, EOCRFilterType.INVERT_COLOR:
-          Result := SimpleOCRFilter.ApplyColorRule(FClient, TColorRuleArray(Filter.ColorRule.Colors), Filter.ColorRule.Invert, FSearchArea);
+    case Filter.FilterType of
+      EOCRFilterType.COLOR,
+      EOCRFilterType.INVERT_COLOR:
+        begin
+          Result := ApplyColorFilter(Filter, FClient, FSearchArea);
 
-        EOCRFilterType.THRESHOLD:
-          Result := SimpleOCRFilter.ApplyThresholdRule(FClient, Filter.ThresholdRule.Invert, Filter.ThresholdRule.Amount, FSearchArea);
+          FBinaryImage := True;
+          FMaxShadowValue := 0;
+          FTolerance := 0;
+        end;
 
-        EOCRFilterType.SHADOW:
-          Result := SimpleOCRFilter.ApplyShadowRule(FClient, Filter.ShadowRule.MaxShadowValue, Filter.ShadowRule.Tolerance, FSearchArea);
-      end;
+      EOCRFilterType.ANY_COLOR:
+        begin
+          FBinaryImage := False;
+          FMaxShadowValue := Filter.AnyColorFilter.MaxShadowValue;
+          FTolerance := Sqr(Filter.AnyColorFilter.Tolerance);
+        end;
+
+      EOCRFilterType.THRESHOLD:
+        begin
+          Result := ApplyThresholdFilter(Filter, FClient, FSearchArea);
+
+          FBinaryImage := True;
+          FMaxShadowValue := 0;
+          FTolerance := 0;
+        end;
+
+      EOCRFilterType.SHADOW:
+        begin
+          Result := ApplyShadowFilter(Filter, FClient, FSearchArea);
+
+          FBinaryImage := True;
+          FMaxShadowValue := 0;
+          FTolerance := 0;
+        end;
     end;
 
     if Static then
@@ -283,12 +267,13 @@ function TSimpleOCR._RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: 
 
   function CompareChar(const Character: TFontCharacter; const OffsetX, OffsetY: Integer): Integer; inline;
   var
-    I, Hits, Any: Integer;
+    Hits, Any: Integer;
+    First: TRGB32;
     P: TPoint;
   begin
     Result := 0;
 
-    // Check if  character is loaded
+    // Check if character is loaded
     if (Character.CharacterPointsLength = 0) then
       Exit;
 
@@ -300,12 +285,25 @@ function TSimpleOCR._RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: 
     Hits := 0;
     Any := 0;
 
-    // count hits for the character
-    for I := 0 to Character.CharacterPointsLength - 1 do
+    First := TRGB32(FClient[Character.CharacterPoints[0].Y + OffsetY, Character.CharacterPoints[0].X + OffsetX]);
+    // If binary image and not non-zero it cannot be a character point
+    if FBinaryImage and (Integer(First) = 0) then
+      Exit;
+
+    // Check if not a shadow
+    if (FMaxShadowValue > 0) then
     begin
-      P := Character.CharacterPoints[I];
-      if (FClient[P.Y + OffsetY, P.X + OffsetX] <> FILTER_HIT) then
+      if ((First.R + First.G + First.B) div 3 < 85) and
+         ((First.R < FMaxShadowValue * 2) and (First.G < FMaxShadowValue * 2) and (First.B < FMaxShadowValue * 2)) then
         Exit;
+    end;
+
+    // count hits for the character
+    for P in Character.CharacterPoints do
+    begin
+      with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
+        if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > FTolerance then
+          Exit;
 
       Inc(Hits, 2);
     end;
@@ -313,22 +311,34 @@ function TSimpleOCR._RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: 
     if (Hits < Character.CharacterPointsLength) then
       Exit; // < 50% match.
 
-    if (Character.BackgroundPointsLength > 0) then
+    if (FMaxShadowValue = 0) then
     begin
       // counts hits for the points that should not have equal Color to character
-      for I := 0 to High(Character.BackgroundPoints) do
+      // not needed for shadow-fonts
+      for P in Character.BackgroundPoints do
       begin
-        P := Character.BackgroundPoints[I];
-        if (FClient[P.Y + OffsetY, P.X + OffsetX] <> FILTER_HIT) then
-          Inc(Any)
-        else
-          Dec(Hits);
+        with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
+          if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > FTolerance then
+            Inc(Any)
+          else
+            Dec(Hits);
       end;
 
-      if (Any <= (Character.BackgroundPointsLength div 2)) then
-        Exit; // <= 50% match.
+      if (Character.BackgroundPointsLength > 0) and (Any <= (Character.BackgroundPointsLength div 2)) then
+        Exit;
 
       Inc(Hits, Any);
+    end else
+    begin
+      // count hits for shadow
+      for P in Character.ShadowPoints do
+      begin
+        with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
+          if (R > FMaxShadowValue) or (G > FMaxShadowValue) or (B > FMaxShadowValue) then
+            Exit;
+
+        Inc(Hits);
+      end;
     end;
 
     Result := Hits;
@@ -425,13 +435,7 @@ begin
   Result := Best.Text;
 end;
 
-class function TSimpleOCR.Create(const Client: T2DIntegerArray): TSimpleOCR;
-begin
-  Result := Default(TSimpleOCR);
-  Result.FClient := Client;
-end;
-
-function TSimpleOCR.TextToMatrix(const Text: String; const FontSet: TFontSet): T2DIntegerArray;
+function TSimpleOCR.TextToMatrix(Text: String; constref FontSet: TFontSet): TIntegerMatrix;
 var
   I, J, X, Y: Integer;
   Bounds: TBox;
@@ -483,9 +487,9 @@ begin
   end;
 end;
 
-function TSimpleOCR.TextToTPA(const Text: String; const FontSet: TFontSet): TPointArray;
+function TSimpleOCR.TextToTPA(Text: String; constref FontSet: TFontSet): TPointArray;
 var
-  Matrix: T2DIntegerArray;
+  Matrix: TIntegerMatrix;
   X, Y, W, H: Integer;
   Count: Integer;
 begin
@@ -509,13 +513,19 @@ begin
   end;
 end;
 
-function TSimpleOCR.LocateText(const Text: String; const FontSet: TFontSet; out Bounds: TBox): Single;
+function TSimpleOCR.LocateText(Matrix: TIntegerMatrix; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter; out Bounds: TBox): Single;
+
+  function SimilarColors(const Color1, Color2: TRGB32; const Tolerance: Integer): Boolean; inline;
+  begin
+    Result := Sqr(Color1.R - Color2.R) + Sqr(Color1.G - Color2.G) + Sqr(Color1.B - Color2.B) <= Tolerance;
+  end;
+
 var
   X, Y: Integer;
   Color, Bad, I: Integer;
   P: TPoint;
   Match: Single;
-  TextMatrix: T2DIntegerArray;
+  TextMatrix: TIntegerMatrix;
   TextWidth, TextHeight: Integer;
   CharacterIndices, OtherIndices: TPointArray;
   CharacterCount, OtherCount: Integer;
@@ -527,7 +537,7 @@ begin
   TextMatrix := Self.TextToMatrix(Text, FontSet);
   if not MatrixDimensions(TextMatrix, TextWidth, TextHeight) then
     Exit;
-  if not Self.Init(FontSet, TOCRFilter.Empty, True) then
+  if not Self.Init(Matrix, FontSet, Filter, True) then
     Exit;
 
   SetLength(CharacterIndices, TextWidth * TextHeight);
@@ -569,7 +579,9 @@ begin
         if (P.X < 0) or (P.Y < 0) or (P.X >= FWidth) or (P.Y >= FHeight) then
           Continue;
         Color := FClient[P.Y, P.X];
-        if (Color = FILTER_MISS) then
+
+        // If binary image and not non-zero it cannot be a character point
+        if FBinaryImage and (Integer(Color) = 0) then
           Continue;
 
         for I := 1 to CharacterCount do
@@ -577,7 +589,7 @@ begin
           P.Y := Y + CharacterIndices[I].Y;
           P.X := X + CharacterIndices[I].X;
 
-          if (P.X < 0) or (P.Y < 0) or (P.X >= FWidth) or (P.Y >= FHeight) or (FClient[P.Y, P.X] <> Color) then
+          if (P.X < 0) or (P.Y < 0) or (P.X >= FWidth) or (P.Y >= FHeight) or (not SimilarColors(TRGB32(FClient[P.Y, P.X]), TRGB32(Color), FTolerance)) then
             goto NotFound;
         end;
 
@@ -588,7 +600,7 @@ begin
           P.Y := Y + OtherIndices[I].Y;
           P.X := X + OtherIndices[I].X;
 
-          if (P.X < 0) or (P.Y < 0) or (P.X >= FWidth) or (P.Y >= FHeight) or (FClient[P.Y, P.X] = Color) then
+          if (P.X < 0) or (P.Y < 0) or (P.X >= FWidth) or (P.Y >= FHeight) or SimilarColors(TRGB32(FClient[P.Y, P.X]), TRGB32(Color), FTolerance) then
             Inc(Bad);
         end;
 
@@ -612,172 +624,34 @@ begin
   end;
 end;
 
-function TSimpleOCR.LocateText(const Text: String; const FontSet: TFontSet; const Filter: TOCRFilter; out Bounds: TBox): Single;
+function TSimpleOCR.LocateText(Matrix: TIntegerMatrix; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter; MinMatch: Single): Boolean;
+var
+  _: TBox;
 begin
-  Result := 0;
-  if Self.Init(FontSet, Filter, True) then
-    Result := LocateText(Text, FontSet, Bounds);
+  Result := LocateText(Matrix, Text, FontSet, Filter, _) >= MinMatch;
 end;
 
-function TSimpleOCR.Recognize(const Filter: TOCRFilter; const FontSet: TFontSet): String;
+function TSimpleOCR.Recognize(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet): String;
 var
   Hits: Integer;
   Bounds: TBox;
 begin
   Result := '';
-  if Self.Init(FontSet, Filter, False) then
+  if Self.Init(Matrix, FontSet, Filter, False) then
     Result := _RecognizeXY(FSearchArea, FontSet.CharacterPoints[Filter.MinCharacterMatch], $FFFFFF, Hits, Bounds);
 end;
 
-// Uptext has its own special CompareChar
-function TSimpleOCR.RecognizeUpText(const Filter: TOCRFilter; const FontSet: TFontSet; const MaxWalk: Integer): String;
-
-  function CompareChar(const Character: TFontCharacter; const OffsetX, OffsetY: Integer): Integer; inline;
-  var
-    I, Hits, Any: Integer;
-    First: TRGB32;
-    P: TPoint;
-  begin
-    Result := 0;
-
-    // Check if  character is loaded
-    if (Character.CharacterPointsLength = 0) then
-      Exit;
-
-    // Check if entire character is in client
-    with Character.TotalBounds do
-      if (X1 + OffsetX < 0) or (Y1 + OffsetY < 0) or (X2 + OffsetX >= FWidth) or (Y2 + OffsetY >= FHeight) then
-        Exit;
-
-    with Filter.UpTextFilter do
-    begin
-      Hits := 0;
-      Any := 0;
-
-      First := TRGB32(FClient[Character.CharacterPoints[0].Y + OffsetY, Character.CharacterPoints[0].X + OffsetX]);
-      if (MaxShadowValue > 0) then
-      begin
-        if ((First.R + First.G + First.B) div 3 < 85) and
-           ((First.R < MaxShadowValue * 2) and (First.G < MaxShadowValue * 2) and (First.B < MaxShadowValue * 2)) then
-          Exit;
-      end;
-
-      // count hits for the character
-      for I := 0 to Character.CharacterPointsLength - 1 do
-      begin
-        P := Character.CharacterPoints[I];
-        with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
-          if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > Tolerance then
-            Exit;
-
-        Inc(Hits, 2);
-      end;
-
-      if (Hits < Character.CharacterPointsLength) then
-        Exit; // < 50% match.
-
-      if (MaxShadowValue = 0) then
-      begin
-        // counts hits for the points that should not have equal Color to character
-        // not needed for shadow-fonts
-        for I := 0 to High(Character.BackgroundPoints) do
-        begin
-          P := Character.BackgroundPoints[I];
-          with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
-            if Sqr(R - First.R) + Sqr(B - First.B) + Sqr(G - First.G) > Tolerance then
-              Inc(Any)
-            else
-              Dec(Hits);
-        end;
-
-        if (Character.BackgroundPointsLength > 0) and (Any <= (Character.BackgroundPointsLength div 2)) then
-          Exit;
-
-        Inc(Hits, Any);
-      end else
-      begin
-        // count hits for shadow
-        for I := 0 to High(Character.ShadowPoints) do
-        begin
-          P := Character.ShadowPoints[I];
-          with TRGB32(FClient[P.Y + OffsetY, P.X + OffsetX]) do
-            if (R > MaxShadowValue) or (G > MaxShadowValue) or (B > MaxShadowValue) then
-              Exit;
-
-          Inc(Hits);
-        end;
-      end;
-
-      Result := Hits;
-    end;
-  end;
-
-var
-  Character: Char;
-  BestCharacter: PFontCharacter;
-  Space, Hits, BestHits, MinPointsNeeded: Integer;
-begin
-  Result := '';
-
-  if (Filter.FilterType <> EOCRFilterType.UPTEXT) then
-  begin
-    WriteLn('TSimpleOCR.RecognizeUpText: OCR Filter is not TOCRUpTextFilter');
-    Halt(1);
-  end;
-
-  if Self.Init(FontSet, TOCRFilter.Empty, True) then
-  begin
-    MinPointsNeeded := FontSet.CharacterPoints[Filter.MinCharacterMatch];
-    Space := 0;
-
-    while (FSearchArea.X1 < FSearchArea.X2) and (Space < MaxWalk) do
-    begin
-      BestHits := 0;
-
-      for Character := FONTSET_START to FONTSET_END do
-      begin
-        Hits := CompareChar(FFontSet.Characters[Character], FSearchArea.X1, FSearchArea.Y1);
-
-        if (Hits > BestHits) then
-        begin
-          BestHits := Hits;
-          BestCharacter := @FFontSet.Characters[Character];
-        end;
-      end;
-
-      if (BestHits > 0) then
-      begin
-        if (BestCharacter^.CharacterPointsLength >= MinPointsNeeded) then
-        begin
-          if (Result <> '') and (Space >= FFontSet.SpaceWidth) then
-            Result += ' ';
-          Space := 0;
-
-          Result += BestCharacter^.Value;
-          FSearchArea.X1 += BestCharacter^.Width;
-
-          Continue;
-        end else
-          Space := 0;
-      end else
-        Space += 1;
-
-      FSearchArea.X1 += 1;
-    end;
-  end;
-end;
-
-function TSimpleOCR.RecognizeStatic(const Filter: TOCRFilter; const FontSet: TFontSet; const MaxWalk: Integer): String;
+function TSimpleOCR.RecognizeStatic(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; MaxWalk: Integer): String;
 var
   Hits: Integer;
   Bounds: TBox;
 begin
   Result := '';
-  if Self.Init(FontSet, Filter, True) then
+  if Self.Init(Matrix, FontSet, Filter, True) then
     Result := Self._RecognizeX(FSearchArea, FontSet.CharacterPoints[Filter.MinCharacterMatch], MaxWalk, Hits, Bounds);
 end;
 
-function TSimpleOCR.RecognizeLines(const Filter: TOCRFilter; const FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray;
+function TSimpleOCR.RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray;
 var
   Bounds: TBox;
   Text: String;
@@ -787,24 +661,24 @@ begin
   Result := nil;
   TextBounds := nil;
 
-  if Self.Init(FontSet, Filter, False) then
+  if Self.Init(Matrix, FontSet, Filter, False) then
   begin
     MinCharacterPoints := FontSet.CharacterPoints[','];
 
-    while (FSearchArea.Y1 + (FFontSet.MaxHeight div 2) < FSearchArea.Y2) do
+    while (FSearchArea.Y1 + (FFontSet.MaxHeight div 3) < FSearchArea.Y2) do
     begin
       Self._RecognizeX(FSearchArea, MinCharacterPoints, $FFFFFF, Hits, Bounds);
 
       if (Hits > 0) then
       begin
-        Text := Self._RecognizeXY(Box(FSearchArea.X1, FSearchArea.Y1, FSearchArea.X2, FSearchArea.Y1 + FFontSet.MaxHeight - 2), MinCharacterPoints, $FFFFFF, Hits, Bounds);
+        Text := Self._RecognizeXY(Box(FSearchArea.X1, FSearchArea.Y1, FSearchArea.X2, FSearchArea.Y1 + FFontSet.MaxHeight), MinCharacterPoints, $FFFFFF, Hits, Bounds);
         if (Text = '') then
           Exit;
 
         Result := Result + [Text];
         TextBounds := TextBounds + [Bounds];
 
-        FSearchArea.Y1 += FFontSet.MaxHeight - 4;
+        FSearchArea.Y1 := Bounds.Y2 - (FFontSet.MaxHeight div 2);
       end;
 
       FSearchArea.Y1 += 1;
@@ -812,11 +686,11 @@ begin
   end;
 end;
 
-function TSimpleOCR.RecognizeLines(const Filter: TOCRFilter; const FontSet: TFontSet): TStringArray;
+function TSimpleOCR.RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray;
 var
-  TextBounds: TBoxArray;
+  _: TBoxArray;
 begin
-  Result := Self.RecognizeLines(Filter, FontSet, TextBounds);
+  Result := Self.RecognizeLines(Matrix, Filter, FontSet, _);
 end;
 
 end.

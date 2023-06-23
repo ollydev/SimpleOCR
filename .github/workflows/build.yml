@@ -7,14 +7,15 @@ on:
   pull_request:
     branches:
       - '**'
+
+env:
+  FPC_VER: release_3_2_2
+  LAZ_VER: lazarus_2_2_4
       
 jobs:
   build:
     name: ${{ matrix.config.name }}
     runs-on: ${{ matrix.config.os }}
-    defaults:
-      run:
-        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -45,29 +46,42 @@ jobs:
             binary: libsimpleocr64.dylib
             
     steps:
-      - uses: actions/checkout@v3.0.2
+      - uses: actions/checkout@v3.5.3
       
       - name: Install Lazarus
-        uses: ollydev/setup-lazarus-fpcup@v2.5
+        uses: ollydev/setup-lazarus-fpcup@v3.2
         with:
-          laz-branch: lazarus_2_2_2
-          fpc-branch: release_3_2_2
-          fpcup-release: v2.2.0h
+          laz: ${{ env.LAZ_VER }}
+          fpc: ${{ env.FPC_VER }}
           
       - name: Build SimpleOCR
         run: |
           lazbuild --build-mode=${{ matrix.config.build-mode }} SimpleOCR.lpi
 
-      - name: Test SimpleOCR
-        if: matrix.config.name == 'Windows 32'
-        run: |
-          unzip -q fonts
-          cd test
-          lazbuild tester.lpi
-          ./tester.exe
-
       - name: Upload Binary 
-        uses: actions/upload-artifact@v2.3.1
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: ${{ matrix.config.binary }}
           path: ${{ matrix.config.binary }}
+
+  testing:
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3.5.3
+
+      - name: Install Lazarus
+        uses: ollydev/setup-lazarus-fpcup@v3.2
+        with:
+          laz: ${{ env.LAZ_VER }}
+          fpc: ${{ env.FPC_VER }}
+
+      - name: Build Tester
+        run: |
+          cd tester
+          lazbuild tester.lpi
+
+      - name: Run Tests
+        run: |
+          cd tester  
+          ./tester.exe   

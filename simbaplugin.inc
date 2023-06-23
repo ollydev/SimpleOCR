@@ -35,9 +35,9 @@ begin
   end;
 end;
 
-procedure addCode(Code: String);
+procedure addCode(Code: TStringArray);
 begin
-  SimbaImports.Code := SimbaImports.Code + Code;
+  SimbaImports.Code := SimbaImports.Code + String.Join(LineEnding, Code);
 end;
 
 // Exports

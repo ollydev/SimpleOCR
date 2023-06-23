@@ -35,9 +35,15 @@ function TSimpleOCR.LocateText(Area: TBox; Font: TFontSet; out Bounds: TBox): Si
   ```
   Example:
   ```pascal
-  TOCRColorFilter.Create([255]); // Find color red
+  TOCRColorFilter.Create([$0000FF]); // Find color red
   ```
   ![Example](images/filter_color_200.png)
+  
+  Example with tolerance:
+  ```pascal
+  TOCRColorFilter.Create([$FFFFFF], [100]); // Find color white with 100 tolerance
+  ```
+  ![Example](images/filter_colortolerance_200.png)
 
   ---
 
