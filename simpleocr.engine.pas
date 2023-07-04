@@ -76,6 +76,8 @@ type
     function _RecognizeX(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
     function _RecognizeXY(Bounds: TBox; const MinCharacterCount, MaxWalk: Integer; out TextHits: Integer; out TextBounds: TBox): String;
   public
+    property Client: TIntegerMatrix read FClient;
+
     function TextToMatrix(Text: String; constref FontSet: TFontSet): TIntegerMatrix;
     function TextToTPA(Text: String; constref FontSet: TFontSet): TPointArray;
 
@@ -653,7 +655,7 @@ end;
 
 function TSimpleOCR.RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray;
 var
-  Bounds: TBox;
+  SearchBox, Bounds, LastBounds: TBox;
   Text: String;
   Hits: Integer;
   MinCharacterPoints: Integer;
@@ -663,25 +665,31 @@ begin
 
   if Self.Init(Matrix, FontSet, Filter, False) then
   begin
-    MinCharacterPoints := FontSet.CharacterPoints[','];
+    MinCharacterPoints := FontSet.CharacterPoints[','] + 1;
 
-    while (FSearchArea.Y1 + (FFontSet.MaxHeight div 3) < FSearchArea.Y2) do
+    LastBounds := Box(-1, -1, -1, -1);
+    SearchBox := FSearchArea;
+    while (SearchBox.Y1 + (FFontSet.MaxHeight div 2) < FSearchArea.Y2) do
     begin
-      Self._RecognizeX(FSearchArea, MinCharacterPoints, $FFFFFF, Hits, Bounds);
+      // Find something on a row that is larger than `,`
+      Self._RecognizeX(SearchBox, MinCharacterPoints, $FFFFFF, Hits, Bounds);
 
       if (Hits > 0) then
       begin
-        Text := Self._RecognizeXY(Box(FSearchArea.X1, FSearchArea.Y1, FSearchArea.X2, FSearchArea.Y1 + FFontSet.MaxHeight), MinCharacterPoints, $FFFFFF, Hits, Bounds);
-        if (Text = '') then
+        // OCR the row and some extra columns
+        Text := Self._RecognizeXY(Box(SearchBox.X1, SearchBox.Y1, SearchBox.X2, SearchBox.Y1 + (FFontSet.MaxHeight div 2)), FontSet.CharacterPoints[Filter.MinCharacterMatch], $FFFFFF, Hits, Bounds);
+        if (Text = '') or (Bounds.Y1 = LastBounds.Y1) then
           Exit;
 
+        LastBounds := Bounds;
         Result := Result + [Text];
         TextBounds := TextBounds + [Bounds];
 
-        FSearchArea.Y1 := Bounds.Y2 - (FFontSet.MaxHeight div 2);
+        // Move down to the found text Bounds.Y2 (minus a little) so we don't recognize this again
+        SearchBox.Y1 := Bounds.Y2 - (FFontSet.MaxHeight div 4);
       end;
 
-      FSearchArea.Y1 += 1;
+      SearchBox.Y1 += 1;
     end;
   end;
 end;

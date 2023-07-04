@@ -78,9 +78,9 @@ begin
 
   Assert(Length(Lines) = 5);
   Assert(Lines[0] = 'Select an Option');
-  Assert(Lines[1] = 'Id like to access my bank account, please.');
-  Assert(Lines[2] = 'Id like to check my PIN settings.');
-  Assert(Lines[3] = 'Id like to collect items.');
+  Assert(Lines[1] = 'I''d like to access my bank account, please.');
+  Assert(Lines[2] = 'I''d like to check my PIN settings.');
+  Assert(Lines[3] = 'I''d like to collect items.');
   Assert(Lines[4] = 'What is this place?');
 end;
 
@@ -102,6 +102,96 @@ begin
   Assert(Length(Lines) = 2);
   Assert(Lines[0] = 'Blighted super');
   Assert(Lines[1] = 'restore(4)');
+end;
+
+procedure Test_MultiLine3;
+const
+  Filter1: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: $009933; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+  Filter2: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: $00CC33; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+var
+  Lines: TStringArray;
+  I: Integer;
+begin
+  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter1, FONT_PLAIN_11);
+  for I := 0 to High(Lines) do
+    Lines[I] := StringReplace(Lines[I], 'I', 'l', [rfReplaceAll]);
+
+  Assert(Length(Lines) = 5);
+  Assert(Lines[0] = 'Leather Boots:');
+  Assert(Lines[1] = 'Adamant Kiteshield:');
+  Assert(Lines[2] = 'Adamant Helm:');
+  Assert(Lines[3] = 'Emerald:');
+  Assert(Lines[4] = 'Rune Longsword:');
+
+  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter2, FONT_PLAIN_11);
+
+  Assert(Length(Lines) = 6);
+  Assert(Lines[0] = '0');
+  Assert(Lines[1] = '5');
+  Assert(Lines[2] = '1');
+  Assert(Lines[3] = '30');
+  Assert(Lines[4] = '15');
+  Assert(Lines[5] = '8');
+end;
+
+procedure Test_MultiLine4;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: $000000; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+var
+  Lines: TStringArray;
+begin
+  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline4.png'), Filter, FONT_PLAIN_12);
+
+  Assert(Length(Lines) = 3);
+  Assert(Lines[0] = 'Fishing XP: 20');
+  Assert(Lines[1] = 'Next level at: 83');
+  Assert(Lines[2] = 'Remaining XP: 63');
+end;
+
+procedure Test_MultiLine5;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: 3099981; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+var
+  Lines: TStringArray;
+begin
+  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline5.png'), Filter, FONT_PLAIN_12);
+
+  Assert(Length(Lines) = 7);
+  Assert(Lines[0] = 'Ahrim');
+  Assert(Lines[1] = 'Dharok');
+  Assert(Lines[2] = 'Guthan');
+  Assert(Lines[3] = 'Karil');
+  Assert(Lines[4] = 'Torag');
+  Assert(Lines[5] = 'Verac');
+  Assert(Lines[6] = 'Rewards potential: 0%');
 end;
 
 procedure Test_UpText1;
@@ -231,14 +321,14 @@ var
   Fail, Pass: Integer;
   StartTime: UInt64;
 
-function Test(Proc: TProcedure; Name: String): Boolean;
+procedure Test(Proc: TProcedure; Name: String);
 begin
-  Result := True;
-
   try
     WriteLn('Testing: ' + Name);
     Proc();
     WriteLn('Passed');
+
+    Inc(Pass);
   except
     on E: Exception do
     begin
@@ -247,7 +337,7 @@ begin
       else
         WriteLn('Failed: ', E.Message);
 
-      Result := False;
+      Inc(Fail);
     end;
   end;
 end;
@@ -272,6 +362,9 @@ begin
   Test(@Test_Threshold2, 'Threshold2');
   Test(@Test_MultiLine1, 'MultiLine1');
   Test(@Test_MultiLine2, 'MultiLine2');
+  Test(@Test_MultiLine3, 'MultiLine3');
+  Test(@Test_MultiLine4, 'MultiLine4');
+  Test(@Test_MultiLine5, 'MultiLine5');
   Test(@Test_UpText1, 'UpText1');
   Test(@Test_UpText2, 'UpText2');
   Test(@Test_Shadow, 'Shadow');
@@ -288,6 +381,6 @@ begin
   if (Fail > 0) then
     ExitCode := 1;
 
-  ReadLn;
+  //ReadLn;
 end.
 
