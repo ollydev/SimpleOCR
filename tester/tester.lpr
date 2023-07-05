@@ -194,6 +194,37 @@ begin
   Assert(Lines[6] = 'Rewards potential: 0%');
 end;
 
+
+
+procedure Test_MultiLine6;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: 0; Tolerance: 0)); Invert: False);
+    ThresholdRule: ();
+    ShadowRule: ();
+    MinCharacterMatch: #0;
+  );
+var
+  Lines: TStringArray;
+begin
+  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline6.png'), Filter, FONT_QUILL_8);
+
+  Assert(Length(Lines) = 4);
+  Assert(Lines[0] = 'Al Kharid PvP Arena.');
+  Assert(Lines[1] = 'Castle Wars Arena.');
+  Assert(Lines[2] = 'Ferox Enclave.');
+  Assert(Lines[3] = 'Nowhere.');
+end;
+
+
+
+
+
+
+
+
 procedure Test_UpText1;
 const
   Filter: TOCRFilter = (
@@ -365,6 +396,7 @@ begin
   Test(@Test_MultiLine3, 'MultiLine3');
   Test(@Test_MultiLine4, 'MultiLine4');
   Test(@Test_MultiLine5, 'MultiLine5');
+  Test(@Test_MultiLine6, 'MultiLine6');
   Test(@Test_UpText1, 'UpText1');
   Test(@Test_UpText2, 'UpText2');
   Test(@Test_Shadow, 'Shadow');
