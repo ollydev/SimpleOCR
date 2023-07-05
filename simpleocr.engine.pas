@@ -27,6 +27,10 @@ const
   FONTSET_START = #32;
   FONTSET_END   = #126;
 
+const
+  ALPHA_NUMERIC_SYM = ['a'..'z', 'A'..'Z', '0'..'9','%','&','#','$','[',']','{','}','@','!','?'];
+
+
 type
   PFontCharacter = ^TFontCharacter;
   TFontCharacter = packed record
@@ -94,6 +98,17 @@ implementation
 
 uses
   graphtype, intfgraphics, graphics, math;
+
+
+function ContainsAlphaNumSym(text: string): Boolean; inline;
+var i: Int32;
+begin
+  Result := False;
+  for i:=1 to Length(text) do
+    if Text[i] in ALPHA_NUMERIC_SYM then
+      Exit(True);
+end;
+
 
 function TFontSet.GetCharacterPoints(const Character: Char): Integer;
 begin
@@ -678,15 +693,21 @@ begin
       begin
         // OCR the row and some extra columns
         Text := Self._RecognizeXY(Box(SearchBox.X1, SearchBox.Y1, SearchBox.X2, SearchBox.Y1 + (FFontSet.MaxHeight div 2)), FontSet.CharacterPoints[Filter.MinCharacterMatch], $FFFFFF, Hits, Bounds);
-        if (Text = '') or (Bounds.Y1 = LastBounds.Y1) then
+
+        if (Text = '') then
           Exit;
 
-        LastBounds := Bounds;
-        Result := Result + [Text];
-        TextBounds := TextBounds + [Bounds];
+        // Ensure that actual text was extracted, not just a symbol mess of short or small character symbols.
+        if ContainsAlphaNumSym(Text) then
+        begin
+          LastBounds := Bounds;
+          Result := Result + [Text];
+          TextBounds := TextBounds + [Bounds];
 
-        // Move down to the found text Bounds.Y2 (minus a little) so we don't recognize this again
-        SearchBox.Y1 := Bounds.Y2 - (FFontSet.MaxHeight div 4);
+          // Now we can confidently skip this search line by a jump, but we dont skip it fully in case of overlapping text
+          // So we divide the texts max glyph height by 4, and subtract that from the lower end of the found bounds.
+          SearchBox.Y1 := Max(SearchBox.Y1, Bounds.Y2 - (FFontSet.MaxHeight div 4));
+        end;
       end;
 
       SearchBox.Y1 += 1;

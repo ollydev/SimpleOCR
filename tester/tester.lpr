@@ -129,7 +129,7 @@ begin
   Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter1, FONT_PLAIN_11);
   for I := 0 to High(Lines) do
     Lines[I] := StringReplace(Lines[I], 'I', 'l', [rfReplaceAll]);
-
+  WriteLn(Lines[1]);
   Assert(Length(Lines) = 5);
   Assert(Lines[0] = 'Leather Boots:');
   Assert(Lines[1] = 'Adamant Kiteshield:');
@@ -292,6 +292,7 @@ const
     MinCharacterMatch: #0;
   );
 begin
+  WriteLn(SimpleOCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12));
   Assert(SimpleOCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12) = 'Showing items: hello');
 end;
 
