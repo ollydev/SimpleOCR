@@ -96,7 +96,7 @@ function TSimpleOCR.TextToTPA(Text: String; constref Font: TFontSet): TPointArra
 
 - ### Shadow Filter
 
-  First shadows are found using average R,G,B value. `Shadow = (R+G+B div 3) < MaxShadowValue`
+  First shadows are found using average R,G,B value. `Shadow = (R+G+B) div 3 < MaxShadowValue`
 
   Next shadow pixels are offset by -1,-1. The most common color from the offset pixels is used for the search color.
   ```pascal
