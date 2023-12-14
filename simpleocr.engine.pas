@@ -8,13 +8,6 @@ unit simpleocr.engine;
 
 {$i simpleocr.inc}
 
-{$IFOPT D-} // No debug info = enable max optimization
-  {$OPTIMIZATION LEVEL4}
-
-  {$OPTIMIZATION noORDERFIELDS} // need same field ordering in script
-  {$OPTIMIZATION noDEADSTORE}   // buggy as of FPC .2.2
-{$ENDIF}
-
 interface
 
 uses
@@ -394,7 +387,7 @@ begin
 
     if (BestHits > 0) then
     begin
-      if (BestCharacter^.CharacterPointsLength >= MinCharacterCount) then
+      if ({%H-}BestCharacter^.CharacterPointsLength >= MinCharacterCount) then
       begin
         if (Result <> '') and (Space >= FFontSet.SpaceWidth) then
           Result += ' ';
@@ -670,7 +663,7 @@ end;
 
 function TSimpleOCR.RecognizeLines(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref FontSet: TFontSet; out TextBounds: TBoxArray): TStringArray;
 var
-  SearchBox, Bounds, LastBounds: TBox;
+  SearchBox, Bounds: TBox;
   Text: String;
   Hits: Integer;
   MinCharacterPoints: Integer;
@@ -682,7 +675,6 @@ begin
   begin
     MinCharacterPoints := FontSet.CharacterPoints[','] + 1;
 
-    LastBounds := Box(-1, -1, -1, -1);
     SearchBox := FSearchArea;
     while (SearchBox.Y1 + (FFontSet.MaxHeight div 2) < FSearchArea.Y2) do
     begin
@@ -700,7 +692,6 @@ begin
         // Ensure that actual text was extracted, not just a symbol mess of short or small character symbols.
         if ContainsAlphaNumSym(Text) then
         begin
-          LastBounds := Bounds;
           Result := Result + [Text];
           TextBounds := TextBounds + [Bounds];
 

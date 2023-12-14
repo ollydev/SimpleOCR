@@ -125,14 +125,14 @@ initialization
   addGlobalType(
     'packed record                                                        ' + LineEnding +
     '  FontSet: TFontSet;                                                 ' + LineEnding +
-    '  Client: T2DIntegerArray;                                           ' + LineEnding +
+    '  Client: TIntegerMatrix;                                           ' + LineEnding +
     '  InternalData: array[1..' + IntToStr(InternalDataSize) + '] of Byte;' + LineEnding +
     'end;',
     'TSimpleOCR');
 
   addGlobalFunc('procedure TFontSet.Load(FileName: String; Space: Integer = 4); native;', @TFontSet_Load);
 
-  addGlobalFunc('function TSimpleOCR.TextToMatrix(Text: String; constref Font: TFontSet): T2DIntegerArray; native;', @TSimpleOCR_TextToMatrix);
+  addGlobalFunc('function TSimpleOCR.TextToMatrix(Text: String; constref Font: TFontSet): TIntegerMatrix; native;', @TSimpleOCR_TextToMatrix);
   addGlobalFunc('function TSimpleOCR.TextToTPA(Text: String; constref Font: TFontSet): TPointArray; native;', @TSimpleOCR_TextToTPA);
 
   addGlobalFunc('function TSimpleOCR._LocateText(Matrix: TIntegerMatrix; Text: String; constref Font: TFontSet; Filter: TOCRFilter; out Bounds: TBox): Single; overload; native;', @TSimpleOCR_LocateText1);
@@ -144,6 +144,15 @@ initialization
   addGlobalFunc('function TSimpleOCR._RecognizeStatic(Matrix: TIntegerMatrix; Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String; native;', @TSimpleOCR_RecognizeStatic);
 
   addCode([
+    'function TSimpleOCR._GetColorsMatrix(B: TBox): TIntegerMatrix; static;',
+    'begin',
+    '  {$IFDEF SIMBAMAJOR2000}',
+    '  Result := Finder.GetColorsMatrix(B);',
+    '  {$ELSE}',
+    '  Result := GetColorsMatrix(B.X1, B.Y1, B.X2, B.Y2);',
+    '  {$ENDIF}',
+    'end;',
+    '',
     'type TOCRAnyColorFilter    = type TOCRFilter; // 0',
     'type TOCRColorFilter       = type TOCRFilter; // 1',
     'type TOCRThresholdFilter   = type TOCRFilter; // 2',
@@ -231,19 +240,19 @@ initialization
     '',
     'function TSimpleOCR.Recognize(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): String;',
     'begin',
-    '  Result := Self._Recognize(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Filter, Font);',
+    '  Result := Self._Recognize(TSimpleOCR._GetColorsMatrix(Area), Filter, Font);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeStatic(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet; MaxWalk: Integer = 20): String;',
     'begin',
-    '  Result := Self._RecognizeStatic(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Filter, Font, MaxWalk);',
+    '  Result := Self._RecognizeStatic(TSimpleOCR._GetColorsMatrix(Area), Filter, Font, MaxWalk);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeLines(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet; out Bounds: TBoxArray): TStringArray; overload;',
     'var',
     '  I: Integer;',
     'begin',
-    '  Result := Self._RecognizeLines(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Filter, Font, Bounds);',
+    '  Result := Self._RecognizeLines(TSimpleOCR._GetColorsMatrix(Area), Filter, Font, Bounds);',
     '  for I := 0 to High(Bounds) do',
     '  begin',
     '    Bounds[I].X1 += Area.X1;',
@@ -255,7 +264,7 @@ initialization
     '',
     'function TSimpleOCR.RecognizeLines(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): TStringArray; overload;',
     'begin',
-    '  Result := Self._RecognizeLines(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Filter, Font);',
+    '  Result := Self._RecognizeLines(TSimpleOCR._GetColorsMatrix(Area), Filter, Font);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeNumber(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): Int64;',
@@ -275,7 +284,7 @@ initialization
     '',
     'function TSimpleOCR.LocateText(Area: TBox; Text: String; constref Font: TFontSet; Filter: TOCRFilter; out Bounds: TBox): Single; overload;',
     'begin',
-    '  Result := Self._LocateText(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Text, Font, Filter, Bounds);',
+    '  Result := Self._LocateText(TSimpleOCR._GetColorsMatrix(Area), Text, Font, Filter, Bounds);',
     '',
     '  Bounds.X1 += Area.X1;',
     '  Bounds.Y1 += Area.Y1;',
@@ -285,7 +294,7 @@ initialization
     '',
     'function TSimpleOCR.LocateText(Area: TBox; Text: String; constref Font: TFontSet; Filter: TOCRFilter; MinMatch: Single): Boolean; overload;',
     'begin',
-    '  Result := Self._LocateText(GetColorsMatrix(Area.X1, Area.Y1, Area.X2, Area.Y2), Text, Font, Filter, MinMatch);',
+    '  Result := Self._LocateText(TSimpleOCR._GetColorsMatrix(Area), Text, Font, Filter, MinMatch);',
     'end;'
   ]);
 
