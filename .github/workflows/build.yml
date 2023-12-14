@@ -35,16 +35,21 @@ jobs:
             build-mode: LINUX64
             binary: libsimpleocr64.so
           
-          - name: AArch64  
+          - name: Linux AArch64  
             os: ubuntu-latest
-            build-mode: AARCH64
+            build-mode: LINUX-AARCH64
             binary: libsimpleocr64.so.aarch64
             
           - name: MacOS 64
             os: macos-latest
-            build-mode: DARWIN64
+            build-mode: MACOS
             binary: libsimpleocr64.dylib
-            
+
+          - name: MacOS AArch64
+            os: macos-latest
+            build-mode: MACOS-AARCH64
+            binary: libsimpleocr64.dylib.aarch64
+         
     steps:
       - uses: actions/checkout@v3.5.3
       
