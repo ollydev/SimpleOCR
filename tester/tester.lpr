@@ -6,10 +6,10 @@ program tester;
 {$assertions on}
 
 uses
-  Classes, SysUtils, Zipper, IntfGraphics, GraphType, Graphics,
+  Classes, SysUtils, IntfGraphics, GraphType, Graphics,
   simpleocr.types, simpleocr.engine, simpleocr.filters;
 
-function LoadMatrix(FileName: String): TIntegerMatrix;
+function LoadMatrix(FileName: String): TColorRGBAMatrix;
 var
   Description: TRawImageDescription;
   Image: TLazIntfImage;
@@ -25,7 +25,7 @@ begin
 
   for X := 0 to Image.Width - 1 do
     for Y := 0 to Image.Height - 1 do
-      Result[Y, X] := FPColorToTColor(Image.Colors[X, Y]);
+      Result[Y, X] := TColorRGBA(FPColorToTColor(Image.Colors[X, Y]));
 
   Image.Free();
 end;
@@ -34,12 +34,9 @@ procedure SaveMatrix(Matrix: TIntegerMatrix; FileName: String);
 var
   Description: TRawImageDescription;
   Image: TLazIntfImage;
-  W, H, X, Y: Int32;
+   X, Y: Int32;
 begin
-  if (not MatrixDimensions(Matrix, W, H)) then
-    Exit;
-
-  Description.Init_BPP32_B8G8R8_BIO_TTB(W, H);
+  Description.Init_BPP32_B8G8R8_BIO_TTB(Length(Matrix[0]), Length(Matrix));
 
   Image := TLazIntfImage.Create(0, 0);
   Image.DataDescription := Description;
@@ -53,7 +50,7 @@ begin
 end;
 
 var
-  SimpleOCR: TSimpleOCR;
+  OCR: TSimpleOCR;
 
   FONT_QUILL_8: TFontSet;
   FONT_BOLD_12: TFontSet;
@@ -69,12 +66,13 @@ const
     ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: 128; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline1.png'), Filter, FONT_QUILL_8);
+  OCR.Client := LoadMatrix('images/multiline1.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
 
   Assert(Length(Lines) = 5);
   Assert(Lines[0] = 'Select an Option');
@@ -92,12 +90,13 @@ const
     ColorRule: (Colors: ((Color: 0; Tolerance: 5)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline2.png'), Filter, FONT_PLAIN_12);
+  OCR.Client := LoadMatrix('images/multiline2.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 2);
   Assert(Lines[0] = 'Blighted super');
@@ -112,7 +111,7 @@ const
     ColorRule: (Colors: ((Color: $009933; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
   Filter2: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
@@ -120,13 +119,14 @@ const
     ColorRule: (Colors: ((Color: $00CC33; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
   I: Integer;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter1, FONT_PLAIN_11);
+  OCR.Client := LoadMatrix('images/multiline3.png');
+  Lines := OCR.RecognizeLines(Filter1, FONT_PLAIN_11);
   for I := 0 to High(Lines) do
     Lines[I] := StringReplace(Lines[I], 'I', 'l', [rfReplaceAll]);
 
@@ -137,7 +137,8 @@ begin
   Assert(Lines[3] = 'Emerald:');
   Assert(Lines[4] = 'Rune Longsword:');
 
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter2, FONT_PLAIN_11);
+  OCR.Client := LoadMatrix('images/multiline3.png');
+  Lines := OCR.RecognizeLines(Filter2, FONT_PLAIN_11);
 
   Assert(Length(Lines) = 6);
   Assert(Lines[0] = '0');
@@ -156,12 +157,13 @@ const
     ColorRule: (Colors: ((Color: $000000; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline4.png'), Filter, FONT_PLAIN_12);
+  OCR.Client := LoadMatrix('images/multiline4.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 3);
   Assert(Lines[0] = 'Fishing XP: 20');
@@ -177,12 +179,13 @@ const
     ColorRule: (Colors: ((Color: 3099981; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline5.png'), Filter, FONT_PLAIN_12);
+  OCR.Client := LoadMatrix('images/multiline5.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 7);
   Assert(Lines[0] = 'Ahrim');
@@ -204,12 +207,13 @@ const
     ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: 0; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
   Lines: TStringArray;
 begin
-  Lines := SimpleOCR.RecognizeLines(LoadMatrix('images/multiline6.png'), Filter, FONT_QUILL_8);
+  OCR.Client := LoadMatrix('images/multiline6.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
 
   Assert(Length(Lines) = 4);
   Assert(Lines[0] = 'Al Kharid PvP Arena.');
@@ -218,14 +222,7 @@ begin
   Assert(Lines[3] = 'Nowhere.');
 end;
 
-
-
-
-
-
-
-
-procedure Test_UpText1;
+procedure Test_UpText;
 const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.ANY_COLOR;
@@ -233,24 +230,46 @@ const
     ColorRule: ();
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: ',."'+#39;
   );
-begin
-  Assert(SimpleOCR.RecognizeStatic(LoadMatrix('images/uptext1.png'), Filter, FONT_BOLD_12_SHADOW) = 'Take Green d''hide vambraces / 2 more options');
-end;
 
-procedure Test_UpText2;
-const
-  Filter: TOCRFilter = (
-    FilterType: EOCRFilterType.ANY_COLOR;
-    AnyColorFilter: (MaxShadowValue: 60; Tolerance: 85);
-    ColorRule: ();
-    ThresholdRule: ();
-    ShadowRule: ();
-    MinCharacterMatch: #0;
-  );
+var
+  Mat: TColorRGBAMatrix;
+
+  function Recognize(Y: Integer): String;
+  begin
+    OCR.Client := Copy(Mat, Y);
+    Result := OCR.RecognizeStatic(Filter, FONT_BOLD_12_SHADOW);
+  end;
+
 begin
-  Assert(SimpleOCR.RecognizeStatic(LoadMatrix('images/uptext2.png'), Filter, FONT_BOLD_12_SHADOW) = 'Bank Bank booth / 3 more options');
+  Mat := LoadMatrix('images/uptext.png');
+
+  Assert(Recognize(0)   = 'Chop down Yew tree / 2 more options');
+  Assert(Recognize(20)  = 'Talk-to Grand Exchange Clerk / 98 more options');
+  Assert(Recognize(39)  = 'Bank Bank booth / 3 more options');
+  Assert(Recognize(58)  = 'Remove Chaotic handegg / 1 more options');
+  Assert(Recognize(76)  = 'Use Body rune -> King Roald / 1 more options');
+  Assert(Recognize(95)  = 'Pray-at Altar / 2 more options');
+  Assert(Recognize(114) = 'Attack Grizzly bear (level-21) / 2 more options');
+  Assert(Recognize(133) = 'Use Gold bar -> BAYRAKTAR22 (level-109) / 2 more options');
+  Assert(Recognize(151) = 'Lookup-entity Wiki -> Grand Exchange booth');
+  Assert(Recognize(170) = 'Talk-to rand Exchange Clerk / 1'); // incorrect
+  Assert(Recognize(190) = 'Use Super strength(3) (Members) -> 23 Steal 1');
+  Assert(Recognize(209) = 'Take Green d hide vambraces / 2 more options');
+  Assert(Recognize(228) = 'Use Super strength(3) (Members) -> Hanging banner / 2 more'); // incorrect
+  Assert(Recognize(246) = 'Use Body rune -> Fireplace');
+  Assert(Recognize(264) = 'Talk-to Cook / 2 more options');
+  Assert(Recognize(283) = 'Use Body rune -> Spider (level-1)');
+  Assert(Recognize(302) = 'Use Gold bar -> Barrel / 1 more options');
+  Assert(Recognize(320) = 'Use Body rune -> Cooking Pots / 1 more options');
+  Assert(Recognize(338) = 'Take Mind rune / 2 more options');
+  Assert(Recognize(354) = 'Use Gold bar -> Bank Deposit Box');
+  Assert(Recognize(372) = 'Withdraw-1 Gold bracelet (Members) / 8 more options');
+  Assert(Recognize(390) = 'Talk-to Banker tutor / 8 more options');
+  Assert(Recognize(409) = 'Use Gold bar -> Super strength(3) (Members)');
+  Assert(Recognize(428) = 'Withdraw-1 Clue geode (hard) (Members) / 8 more options');
+  Assert(Recognize(448) = 'Talk-to Spirit tree / 3 more options');
 end;
 
 procedure Test_Shadow;
@@ -261,10 +280,11 @@ const
     ColorRule: ();
     ThresholdRule: ();
     ShadowRule: (MaxShadowValue: 5; Tolerance: 5);
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 begin
-  Assert(SimpleOCR.Recognize(LoadMatrix('images/shadow.png'), Filter, FONT_PLAIN_11) = '53');
+  OCR.Client := LoadMatrix('images/shadow.png');
+  Assert(OCR.Recognize(Filter, FONT_PLAIN_11) = '53');
 end;
 
 procedure Test_Static;
@@ -275,10 +295,11 @@ const
     ColorRule: (Colors: ((Color: 0; Tolerance: 0)); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 begin
-  Assert(SimpleOCR.RecognizeStatic(LoadMatrix('images/static.png'), Filter, FONT_PLAIN_12) = 'You have correctly entered your PIN.');
+  OCR.Client := LoadMatrix('images/static.png');
+  Assert(OCR.RecognizeStatic(Filter, FONT_PLAIN_12) = 'You have correctly entered your PIN.');
 end;
 
 procedure Test_Threshold1;
@@ -289,10 +310,11 @@ const
     ColorRule: ();
     ThresholdRule: (Amount: 10; Invert: False);
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 begin
-  Assert(SimpleOCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12) = 'Showing items: hello');
+  OCR.Client := LoadMatrix('images/thresh.png');
+  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Showing items: hello');
 end;
 
 procedure Test_Threshold2;
@@ -303,10 +325,11 @@ const
     ColorRule: ();
     ThresholdRule: (Amount: 50; Invert: False);
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 begin
-  Assert(SimpleOCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12) = 'Showing items:');
+  OCR.Client := LoadMatrix('images/thresh.png');
+  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Showing items:');
 end;
 
 procedure Test_Locate1;
@@ -317,35 +340,37 @@ const
     ColorRule: ();
     ThresholdRule: (Amount: 10; Invert: False);
     ShadowRule: ();
-    MinCharacterMatch: #0;
+    Blacklist: '';
   );
 var
-  B: TBox;
   Match: Single;
 begin
-  Match := SimpleOCR.LocateText(LoadMatrix('images/locate1.png'), 'items:', FONT_BOLD_12, Filter, B);
+  OCR.Client := LoadMatrix('images/locate1.png');
+  Match := OCR.LocateText('items:', FONT_BOLD_12, Filter);
 
   Assert(Abs(Match - 0.98) < 0.005); // 0.98 because some rogue pixels exist in the `:` character!
-  Assert(B.X1 = 69);
-  Assert(B.Y1 = 6);
-  Assert(B.X2 = 109);
-  Assert(B.Y2 = 15);
+  Assert(Length(OCR.Matches) = 1);
+  Assert(OCR.Matches[0].Bounds.X1 = 69);
+  Assert(OCR.Matches[0].Bounds.Y1 = 6);
+  Assert(OCR.Matches[0].Bounds.X2 = 109);
+  Assert(OCR.Matches[0].Bounds.Y2 = 15);
 end;
 
 procedure Test_Locate2;
 var
   Filter: TOCRFilter;
-  B: TBox;
 begin
   Filter := Default(TOCRFilter);
   Filter.FilterType := EOCRFilterType.ANY_COLOR;
   Filter.AnyColorFilter.Tolerance := 40;
 
-  Assert(SimpleOCR.LocateText(LoadMatrix('images/locate2.png'), 'Showing items:', FONT_BOLD_12, Filter, B) = 0);
+  OCR.Client := LoadMatrix('images/locate2.png');
+  Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 0);
 
   Filter.AnyColorFilter.Tolerance := 50;
 
-  Assert(SimpleOCR.LocateText(LoadMatrix('images/locate2.png'), 'Showing items:', FONT_BOLD_12, Filter, B) = 1);
+  OCR.Client := LoadMatrix('images/locate2.png');
+  Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 1);
 end;
 
 var
@@ -374,21 +399,19 @@ begin
 end;
 
 begin
-  if not DirectoryExists('fonts') then
-    TUnZipper.Unzip('fonts.zip');
+  OCR := Default(TSimpleOCR);
 
-  SimpleOCR := Default(TSimpleOCR);
-
-  FONT_QUILL_8.Load('fonts/Quill 8');
-  FONT_BOLD_12.Load('fonts/Bold 12');
-  FONT_BOLD_12_SHADOW.Load('fonts/Bold 12 Shadow');
-  FONT_PLAIN_11.Load('fonts/Plain 11');
-  FONT_PLAIN_12.Load('fonts/Plain 12');
+  FONT_QUILL_8        := TFontSet.Create('../fonts/Quill 8');
+  FONT_BOLD_12        := TFontSet.Create('../fonts/Bold 12');
+  FONT_BOLD_12_SHADOW := TFontSet.Create('../fonts/Bold 12 Shadow');
+  FONT_PLAIN_11       := TFontSet.Create('../fonts/Plain 11');
+  FONT_PLAIN_12       := TFontSet.Create('../fonts/Plain 12');
 
   Fail := 0;
   Pass := 0;
   StartTime := GetTickCount64();
 
+  Test(@Test_UpText, 'UpText');
   Test(@Test_Threshold1, 'Threshold1');
   Test(@Test_Threshold2, 'Threshold2');
   Test(@Test_MultiLine1, 'MultiLine1');
@@ -397,8 +420,6 @@ begin
   Test(@Test_MultiLine4, 'MultiLine4');
   Test(@Test_MultiLine5, 'MultiLine5');
   Test(@Test_MultiLine6, 'MultiLine6');
-  Test(@Test_UpText1, 'UpText1');
-  Test(@Test_UpText2, 'UpText2');
   Test(@Test_Shadow, 'Shadow');
   Test(@Test_Static, 'Static');
   Test(@Test_Locate1, 'Locate1');

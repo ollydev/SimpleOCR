@@ -10,96 +10,62 @@ unit simpleocr.types;
 
 interface
 
+uses
+  Classes, SysUtils,
+  IntfGraphics;
+
 type
-  PPoint = ^TPoint;
-  TPoint = packed record
-    X, Y: Integer;
-  end;
-
-  PBox = ^TBox;
-  TBox = packed record
-    X1, Y1, X2, Y2: Integer;
-  end;
-
-  PRGB32 = ^TRGB32;
-  TRGB32 = packed record 
-    B, G, R, A: UInt8;
-  end;
-
-  PPointArray = ^TPointArray;
-  TPointArray = array of TPoint;
-
-  PBoxArray = ^TBoxArray;
-  TBoxArray = array of TBox;
-
-  PIntegerArray = ^TIntegerArray;
+  TStringArray = array of String;
   TIntegerArray = array of Integer;
-
-  PIntegerMatrix = ^TIntegerMatrix;
   TIntegerMatrix = array of TIntegerArray;
 
-  PStringArray = ^TStringArray;
-  TStringArray = array of String;
+  TPoint = record
+    X, Y: Integer;
+  end;
+  TPointArray = array of TPoint;
 
-procedure Swap(var A, B: TPoint); inline;
-procedure Swap(var A, B: Integer); inline;
+  TBox = record
+    X1, Y1, X2, Y2: Integer;
+  end;
+  TBoxArray = array of TBox;
 
-function Point(const X, Y: Integer): TPoint; inline;
-function Box(const X1, Y1, X2, Y2: Integer): TBox; inline;
-function MatrixDimensions(const Matrix: TIntegerMatrix; out Width, Height: Integer): Boolean;
+  TColorRGBA = record
+  case Byte of
+    0: (R,G,B,A: UInt8);
+    1: (AsInteger: UInt32);
+  end;
+  TColorRGBAMatrix = array of array of TColorRGBA;
 
 function TPABounds(const TPA: TPointArray): TBox;
 function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX, SY: Integer);
-procedure InsSortTPA(var Arr :TPointArray; Weight: TIntegerArray; Left, Right: Integer);
-procedure SortTPAbyColumn(var Arr: TPointArray);
 function Mode(Self: TIntegerArray; Hi: Integer): Integer;
+
+function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Integer): Boolean; inline;
+function IsShadow(const Color: TColorRGBA; const MaxValue: Integer): Boolean; inline;
+
+procedure OCRException(const Msg: String; Args: array of const);
+
+type
+  TSimpleImage = class(TObject)
+  protected
+    FInternalImage: TLazIntfImage;
+    FWidth: Integer;
+    FHeight: Integer;
+  public
+    constructor Create(FileName: String); reintroduce;
+    destructor Destroy; override;
+
+    property Width: Integer read FWidth;
+    property Height: Integer read FHeight;
+
+    function FindColor(Color: Integer): TPointArray;
+  end;
 
 implementation
 
-procedure Swap(var A, B: TPoint);
-var
-  C: TPoint;
-begin
-  C := A;
-  A := B;
-  B := C;
-end;
-
-procedure Swap(var A, B: Integer);
-var
-  C: Integer;
-begin
-  C := A;
-  A := B;
-  B := C;
-end;
-
-function Point(const X, Y: Integer): TPoint;
-begin
-  Result.X := X;
-  Result.Y := Y;
-end;
-
-function Box(const X1, Y1, X2, Y2: Integer): TBox;
-begin
-  Result.X1 := X1;
-  Result.Y1 := Y1;
-  Result.X2 := X2;
-  Result.Y2 := Y2;
-end;
-
-function MatrixDimensions(const Matrix: TIntegerMatrix; out Width, Height: Integer): Boolean;
-begin
-  Result := True;
-
-  Height := Length(Matrix);
-  if (Height = 0) then
-    Exit(False);
-  Width := Length(Matrix[0]);
-  if (Width = 0) then
-    Exit(False);
-end;
+uses
+  GraphType, Graphics;
 
 //Return the largest and the smallest numbers for x, and y-axis in TPA.
 function TPABounds(const TPA: TPointArray): TBox;
@@ -172,39 +138,6 @@ begin
   end;
 end;
 
-//Fast TPointArray sorting for small arrays.
-procedure InsSortTPA(var Arr: TPointArray; Weight: TIntegerArray; Left, Right: Integer);
-var
-  i, j: Integer;
-begin
-  for i := Left to Right do
-    for j := i downto Left + 1 do
-    begin
-      if not (Weight[j] < Weight[j - 1]) then
-        Break;
-
-      Swap(Arr[j-1], Arr[j]);
-      Swap(Weight[j-1], Weight[j]);
-    end;
-end;
-
-//Sort small TPA by Column.
-procedure SortTPAbyColumn(var Arr: TPointArray);
-var
-  i,Hi: Integer;
-  Weight: TIntegerArray;
-  Area : TBox;
-begin
-  Hi := High(Arr);
-  if Hi < 0 then Exit;
-  Area := TPABounds(Arr);
-  SetLength(Weight, Hi+1);
-  for i := 0 to Hi do
-    Weight[i] := (Arr[i].x * (Area.Y2-Area.Y1) + Arr[i].y);
-  InsSortTPA(Arr, Weight, 0, Hi);
-  SetLength(Weight, 0);
-end;
-
 procedure QuickSort(var A: TIntegerArray; iLo, iHi: Integer);
 var
   Lo, Hi, Pivot, T: Integer;
@@ -263,6 +196,64 @@ begin
     if (Hits > Best) then
       Result := Cur;
   end;
+end;
+
+function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Integer): Boolean;
+begin
+  Result := Sqr(Color1.R - Color2.R) + Sqr(Color1.G - Color2.G) + Sqr(Color1.B - Color2.B) <= Tolerance;
+end;
+
+function IsShadow(const Color: TColorRGBA; const MaxValue: Integer): Boolean;
+begin
+  Result := (Color.R <= MaxValue) and (Color.G <= MaxValue) and (Color.B <= MaxValue + 5); // allow a little more in the blue channel only
+end;
+
+procedure OCRException(const Msg: String; Args: array of const);
+begin
+  raise Exception.Create(Format(Msg, Args));
+end;
+
+constructor TSimpleImage.Create(FileName: String);
+var
+  Description: TRawImageDescription;
+begin
+  inherited Create();
+
+  Description.Init_BPP32_B8G8R8_BIO_TTB(0, 0);
+
+  FInternalImage := TLazIntfImage.Create(0, 0);
+  FInternalImage.DataDescription := Description;
+  FInternalImage.LoadFromFile(FileName);
+
+  FWidth := FInternalImage.Width;
+  FHeight := FInternalImage.Height;
+end;
+
+destructor TSimpleImage.Destroy;
+begin
+  FreeAndNil(FInternalImage);
+
+  inherited Destroy();
+end;
+
+function TSimpleImage.FindColor(Color: Integer): TPointArray;
+var
+  X, Y, Count: Integer;
+begin
+  SetLength(Result, FInternalImage.Width * FInternalImage.Height);
+
+  Count := 0;
+  for X := 0 to FInternalImage.Width - 1 do
+    for Y := 0 to FInternalImage.Height - 1 do
+      if FPColorToTColor(FInternalImage[X, Y]) = Color then
+      begin
+        Result[Count].X := X;
+        Result[Count].Y := Y;
+
+        Inc(Count);
+      end;
+
+  SetLength(Result, Count);
 end;
 
 end.

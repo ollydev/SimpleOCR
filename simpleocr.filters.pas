@@ -23,49 +23,42 @@ type
     INVERT_COLOR
   );
 
-  POCRFilter = ^TOCRFilter;
-  TOCRFilter = packed record
+  TOCRFilter = record
     FilterType: EOCRFilterType;
 
-    AnyColorFilter: packed record
+    AnyColorFilter: record
       MaxShadowValue: Integer;
       Tolerance: Integer;
     end;
 
-    ColorRule: packed record
-      Colors: array of packed record
+    ColorRule: record
+      Colors: array of record
         Color: Integer;
         Tolerance: Integer;
       end;
       Invert: Boolean;
     end;
 
-    ThresholdRule: packed record
+    ThresholdRule: record
       Amount: Integer;
       Invert: Boolean;
     end;
 
-    ShadowRule: packed record
+    ShadowRule: record
       MaxShadowValue: Integer;
       Tolerance: Integer;
     end;
 
-    MinCharacterMatch: Char;
+    Blacklist: String;
   end;
 
-function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
-function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
-function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
+function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 
 implementation
 
-function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
-
-  function SimilarColors(const Color1, Color2: TRGB32; const Tolerance: Integer): Boolean; inline;
-  begin
-    Result := Sqr(Color1.R - Color2.R) + Sqr(Color1.G - Color2.G) + Sqr(Color1.B - Color2.B) <= Tolerance;
-  end;
-
+function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
   X, Y, Width, Height: Integer;
   I, H: Integer;
@@ -105,19 +98,19 @@ begin
     for X := 0 to Width do
       begin
         for I := 0 to H do
-          if SimilarColors(TRGB32(Matrix[Y, X]), TRGB32(Filter.ColorRule.Colors[I].Color), Tols[I]) then
+          if SimilarColors(Matrix[Y, X], TColorRGBA(Filter.ColorRule.Colors[I].Color), Tols[I]) then
           begin
             if (X < Bounds.X1) then Bounds.X1 := X;
             if (Y < Bounds.Y1) then Bounds.Y1 := Y;
             if (X > Bounds.X2) then Bounds.X2 := X;
             if (Y > Bounds.Y2) then Bounds.Y2 := Y;
 
-            Matrix[Y, X] := Hit;
+            Matrix[Y, X].AsInteger := Hit;
 
             goto Next;
           end;
 
-        Matrix[Y, X] := Miss;
+        Matrix[Y, X].AsInteger := Miss;
 
         Next:
       end;
@@ -125,7 +118,7 @@ begin
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
 end;
 
-function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
+function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
   X, Y, W, H: Integer;
   Threshold: UInt8;
@@ -148,7 +141,7 @@ begin
   for Y := 0 to H do
     for X := 0 to W do
     begin
-      with TRGB32(Matrix[Y, X]) do
+      with TColorRGBA(Matrix[Y, X]) do
         Temp[Y, X] := (B + G + R) div 3;
 
       Counter += Temp[Y, X];
@@ -179,27 +172,20 @@ begin
     begin
       if (Temp[Y, X] > Threshold) then
       begin
-        Matrix[Y, X] := Hit;
+        Matrix[Y, X].AsInteger := Hit;
 
         if (X < Bounds.X1) then Bounds.X1 := X;
         if (Y < Bounds.Y1) then Bounds.Y1 := Y;
         if (X > Bounds.X2) then Bounds.X2 := X;
         if (Y > Bounds.Y2) then Bounds.Y2 := Y;
       end else
-        Matrix[Y, X] := Miss;
+        Matrix[Y, X].AsInteger := Miss;
     end;
 
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
 end;
 
-function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TIntegerMatrix; out Bounds: TBox): Boolean;
-
-  function IsShadow(const X, Y: Integer): Boolean; inline;
-  begin
-    with TRGB32(Matrix[Y, X]) do
-      Result := ((R + G + B) div 3) < Filter.ShadowRule.MaxShadowValue;
-  end;
-
+function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
   X, Y, Width, Height: Integer;
   Size, Count: Integer;
@@ -217,7 +203,7 @@ begin
   for Y := 1 to Height do
     for X := 1 to Width do
     begin
-      if IsShadow(X, Y) and (not IsShadow(X-1, Y-1)) then
+      if IsShadow(Matrix[Y, X], Filter.ShadowRule.MaxShadowValue) and (not IsShadow(Matrix[Y-1, X-1], Filter.ShadowRule.MaxShadowValue)) then
       begin
         if (Count = Size) then
         begin
@@ -225,7 +211,7 @@ begin
           SetLength(Colors, Size);
         end;
 
-        Colors[Count] := Matrix[Y-1, X-1];
+        Colors[Count] := Matrix[Y-1, X-1].AsInteger;
         Inc(Count);
       end;
     end;
