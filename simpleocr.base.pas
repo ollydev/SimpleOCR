@@ -1,4 +1,4 @@
-unit simpleocr.types;
+unit simpleocr.base;
 {==============================================================================]
   Copyright (c) 2021, Jarl `slacky` Holta
   Project: SimpleOCR
@@ -18,6 +18,7 @@ type
   TStringArray = array of String;
   TIntegerArray = array of Integer;
   TIntegerMatrix = array of TIntegerArray;
+  TSingleArray = array of Single;
 
   TPoint = record
     X, Y: Integer;
@@ -36,15 +37,16 @@ type
   end;
   TColorRGBAMatrix = array of array of TColorRGBA;
 
+procedure Swap(var A, B: TPoint); inline;
+procedure Swap(var A, B: Integer); inline;
+
 function TPABounds(const TPA: TPointArray): TBox;
 function InvertTPA(const TPA: TPointArray): TPointArray;
 procedure OffsetTPA(var TPA: TPointArray; SX, SY: Integer);
 function Mode(Self: TIntegerArray; Hi: Integer): Integer;
 
-function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Integer): Boolean; inline;
+function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Single): Boolean; inline;
 function IsShadow(const Color: TColorRGBA; const MaxValue: Integer): Boolean; inline;
-
-procedure OCRException(const Msg: String; Args: array of const);
 
 type
   TSimpleImage = class(TObject)
@@ -67,10 +69,27 @@ implementation
 uses
   GraphType, Graphics;
 
-//Return the largest and the smallest numbers for x, and y-axis in TPA.
+procedure Swap(var A, B: TPoint);
+var
+  C: TPoint;
+begin
+  C := A;
+  A := B;
+  B := C;
+end;
+
+procedure Swap(var A, B: Integer);
+var
+  C: Integer;
+begin
+  C := A;
+  A := B;
+  B := C;
+end;
+
 function TPABounds(const TPA: TPointArray): TBox;
 var
-  I,L : Integer;
+  I, L: Integer;
 begin
   Result := Default(TBox);
   L := High(TPA);
@@ -92,9 +111,6 @@ begin
   end;
 end;
 
-{*
- Returns the points not in the TPA within the area the TPA covers.
-*}
 function InvertTPA(const TPA: TPointArray): TPointArray;
 var
   Matrix: TIntegerMatrix;
@@ -124,9 +140,6 @@ begin
   SetLength(Matrix, 0);
 end;
 
-{*
- Moves the TPA by SX, and SY points.
-*}
 procedure OffsetTPA(var TPA: TPointArray; SX, SY: Integer);
 var
   I: Integer;
@@ -198,9 +211,14 @@ begin
   end;
 end;
 
-function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Integer): Boolean;
+function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Single): Boolean;
+const
+  MAX_DISTANCE_RGB = Single(441.672955930064); // Sqrt(Sqr(255) + Sqr(255) + Sqr(255))
 begin
-  Result := Sqr(Color1.R - Color2.R) + Sqr(Color1.G - Color2.G) + Sqr(Color1.B - Color2.B) <= Tolerance;
+  if (Tolerance > 0) then
+    Result := (Sqrt(Sqr(Color1.R-Color2.R) + Sqr(Color1.G-Color2.G) + Sqr(Color1.B-Color2.B)) / MAX_DISTANCE_RGB * 100) <= Tolerance
+  else
+    Result := (Color1.B = Color2.B) and (Color1.G = Color2.G) and (Color1.R = Color2.R);
 end;
 
 function IsShadow(const Color: TColorRGBA; const MaxValue: Integer): Boolean;

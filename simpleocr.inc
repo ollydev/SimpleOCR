@@ -9,5 +9,5 @@
   {$OPTIMIZATION LEVEL4}
 
   {$OPTIMIZATION noORDERFIELDS} // need same field ordering in script
-  {$OPTIMIZATION noDEADSTORE}   // buggy as of FPC .2.2
+  {$OPTIMIZATION noDEADSTORE}   // buggy as of FPC 3.2.2
 {$ENDIF}

@@ -12,7 +12,7 @@ interface
 
 uses
   Classes, SysUtils,
-  simpleocr.types;
+  simpleocr.base;
 
 type
   EOCRFilterType = (
@@ -28,13 +28,13 @@ type
 
     AnyColorFilter: record
       MaxShadowValue: Integer;
-      Tolerance: Integer;
+      Tolerance: Single;
     end;
 
     ColorRule: record
       Colors: array of record
         Color: Integer;
-        Tolerance: Integer;
+        Tolerance: Single;
       end;
       Invert: Boolean;
     end;
@@ -46,29 +46,27 @@ type
 
     ShadowRule: record
       MaxShadowValue: Integer;
-      Tolerance: Integer;
+      Tolerance: Single;
     end;
 
     Blacklist: String;
   end;
 
-function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
-function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
-function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyColor(Color: Integer; Tolerance: Single; Invert: Boolean; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyColors(Colors: TIntegerArray; Tols: TSingleArray; Invert: Boolean; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+
+function ApplyColorFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyThresholdFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyShadowFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 
 implementation
 
-function ApplyColorFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyColor(Color: Integer; Tolerance: Single; Invert: Boolean; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
-  X, Y, Width, Height: Integer;
-  I, H: Integer;
-  Hit, Miss: Integer;
-  Tols: TIntegerArray;
-label
-  Next;
+  Width, Height: Integer;
+  X, Y: Integer;
+  IsSimilar: Boolean;
 begin
-  H := High(Filter.ColorRule.Colors);
-
   Height := High(Matrix);
   Width  := High(Matrix[0]);
 
@@ -77,48 +75,89 @@ begin
   Bounds.X2 := 0;
   Bounds.Y2 := 0;
 
-  case Filter.ColorRule.Invert of
-    True:
-      begin
-        Hit  := $000000;
-        Miss := $FFFFFF;
-      end;
-    False:
-      begin
-        Hit  := $FFFFFF;
-        Miss := $000000;
-      end;
-  end;
-
-  SetLength(Tols, H+1);
-  for I:=0 to H do
-    Tols[I] := Sqr(Filter.ColorRule.Colors[I].Tolerance);
-
   for Y := 0 to Height do
     for X := 0 to Width do
+    begin
+      IsSimilar := SimilarColors(TColorRGBA(Matrix[Y, X]), TColorRGBA(Color), Tolerance);
+
+      if IsSimilar <> Invert then
       begin
-        for I := 0 to H do
-          if SimilarColors(Matrix[Y, X], TColorRGBA(Filter.ColorRule.Colors[I].Color), Tols[I]) then
-          begin
-            if (X < Bounds.X1) then Bounds.X1 := X;
-            if (Y < Bounds.Y1) then Bounds.Y1 := Y;
-            if (X > Bounds.X2) then Bounds.X2 := X;
-            if (Y > Bounds.Y2) then Bounds.Y2 := Y;
+        if (X < Bounds.X1) then Bounds.X1 := X;
+        if (Y < Bounds.Y1) then Bounds.Y1 := Y;
+        if (X > Bounds.X2) then Bounds.X2 := X;
+        if (Y > Bounds.Y2) then Bounds.Y2 := Y;
 
-            Matrix[Y, X].AsInteger := Hit;
-
-            goto Next;
-          end;
-
-        Matrix[Y, X].AsInteger := Miss;
-
-        Next:
-      end;
+        Matrix[Y, X].AsInteger := $FFFFFF;
+      end else
+        Matrix[Y, X].AsInteger := $000000;
+    end;
 
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
 end;
 
-function ApplyThresholdFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyColors(Colors: TIntegerArray; Tols: TSingleArray; Invert: Boolean; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+var
+  Width, Height: Integer;
+  X, Y, I: Integer;
+  IsSimilar: Boolean;
+begin
+  Height := High(Matrix);
+  Width  := High(Matrix[0]);
+
+  Bounds.X1 := $FFFFFF;
+  Bounds.Y1 := $FFFFFF;
+  Bounds.X2 := 0;
+  Bounds.Y2 := 0;
+
+  for Y := 0 to Height do
+    for X := 0 to Width do
+    begin
+      IsSimilar := False;
+      for I := 0 to High(Colors) do
+      begin
+        IsSimilar := SimilarColors(TColorRGBA(Matrix[Y, X]), TColorRGBA(Colors[I]), Tols[I]);
+        if IsSimilar then
+          Break;
+      end;
+
+      if IsSimilar <> Invert then
+      begin
+        if (X < Bounds.X1) then Bounds.X1 := X;
+        if (Y < Bounds.Y1) then Bounds.Y1 := Y;
+        if (X > Bounds.X2) then Bounds.X2 := X;
+        if (Y > Bounds.Y2) then Bounds.Y2 := Y;
+
+        Matrix[Y, X].AsInteger := $FFFFFF;
+      end else
+        Matrix[Y, X].AsInteger := $000000;
+    end;
+
+  Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
+end;
+
+function ApplyColorFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+var
+  Cols: TIntegerArray;
+  Tols: TSingleArray;
+  I: Integer;
+begin
+  if Length(Filter.ColorRule.Colors) = 1 then
+    Result := ApplyColor(Filter.ColorRule.Colors[0].Color, Filter.ColorRule.Colors[0].Tolerance, Filter.ColorRule.Invert, Matrix, Bounds)
+  else
+  begin
+    SetLength(Cols, Length(Filter.ColorRule.Colors));
+    SetLength(Tols, Length(Filter.ColorRule.Colors));
+    for I := 0 to High(Filter.ColorRule.Colors) do
+    begin
+      Cols[I] := Filter.ColorRule.Colors[I].Color;
+      Tols[I] := Filter.ColorRule.Colors[I].Tolerance;
+    end;
+
+    Result := ApplyColors(Cols, Tols, Filter.ColorRule.Invert, Matrix, Bounds);
+  end;
+end;
+
+function ApplyThresholdFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
   X, Y, W, H: Integer;
   Threshold: UInt8;
@@ -185,7 +224,7 @@ begin
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
 end;
 
-function ApplyShadowFilter(Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
+function ApplyShadowFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
   X, Y, Width, Height: Integer;
   Size, Count: Integer;
@@ -216,16 +255,17 @@ begin
       end;
     end;
 
+
   if (Count > 0) then
   begin
-    SetLength(Filter.ColorRule.Colors, 1);
-    with Filter.ColorRule.Colors[0] do
-    begin
-      Color := Mode(Colors, Count - 1);
-      Tolerance := Filter.ShadowRule.Tolerance;
-    end;
+    Bounds.X1 := $FFFFFF;
+    Bounds.Y1 := $FFFFFF;
+    Bounds.X2 := 0;
+    Bounds.Y2 := 0;
 
-    Result := ApplyColorFilter(Filter, Matrix, Bounds);
+    ApplyColor(Mode(Colors, Count - 1), Filter.ShadowRule.Tolerance, False, Matrix, Bounds);
+
+    Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
   end;
 end;
 

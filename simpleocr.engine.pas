@@ -12,7 +12,7 @@ interface
 
 uses
   Classes, SysUtils,
-  simpleocr.types, simpleocr.filters;
+  simpleocr.base, simpleocr.filters;
 
 const
   ALPHA_NUMERIC_SYM = ['a'..'z', 'A'..'Z', '0'..'9','%','&','#','$','[',']','{','}','@','!','?'];
@@ -67,7 +67,7 @@ type
     FSearchArea: TBox;
     FBinaryImage: Boolean;
     FMaxShadowValue: Integer;
-    FTolerance: Integer;
+    FTolerance: Single;
 
     function Init(constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 
@@ -281,7 +281,7 @@ begin
     FFontSet := @FontSet;
     FBinaryImage := Filter.FilterType <> EOCRFilterType.ANY_COLOR;
     FMaxShadowValue := Filter.AnyColorFilter.MaxShadowValue;
-    FTolerance := Sqr(Filter.AnyColorFilter.Tolerance);
+    FTolerance := Filter.AnyColorFilter.Tolerance;
 
     case Filter.FilterType of
       EOCRFilterType.COLOR, EOCRFilterType.INVERT_COLOR:

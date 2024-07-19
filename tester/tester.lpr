@@ -7,7 +7,7 @@ program tester;
 
 uses
   Classes, SysUtils, IntfGraphics, GraphType, Graphics,
-  simpleocr.types, simpleocr.engine, simpleocr.filters;
+  simpleocr.base, simpleocr.engine, simpleocr.filters;
 
 function LoadMatrix(FileName: String): TColorRGBAMatrix;
 var
@@ -226,7 +226,7 @@ procedure Test_UpText;
 const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.ANY_COLOR;
-    AnyColorFilter: (MaxShadowValue: 60; Tolerance: 85);
+    AnyColorFilter: (MaxShadowValue: 60; Tolerance: 20);
     ColorRule: ();
     ThresholdRule: ();
     ShadowRule: ();
@@ -279,11 +279,12 @@ const
     AnyColorFilter: ();
     ColorRule: ();
     ThresholdRule: ();
-    ShadowRule: (MaxShadowValue: 5; Tolerance: 5);
+    ShadowRule: (MaxShadowValue: 5; Tolerance: 1);
     Blacklist: '';
   );
 begin
   OCR.Client := LoadMatrix('images/shadow.png');
+  SaveMatrix(TIntegerMatrix(OCR.Client), 'olly.bmp');
   Assert(OCR.Recognize(Filter, FONT_PLAIN_11) = '53');
 end;
 
@@ -362,15 +363,33 @@ var
 begin
   Filter := Default(TOCRFilter);
   Filter.FilterType := EOCRFilterType.ANY_COLOR;
-  Filter.AnyColorFilter.Tolerance := 40;
 
+  // no matches, not enough tolerance
+  Filter.AnyColorFilter.Tolerance := 5;
   OCR.Client := LoadMatrix('images/locate2.png');
   Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 0);
 
-  Filter.AnyColorFilter.Tolerance := 50;
-
+  // should find now
+  Filter.AnyColorFilter.Tolerance := 10;
   OCR.Client := LoadMatrix('images/locate2.png');
   Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 1);
+end;
+
+procedure Test_Invert;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.COLOR;
+    AnyColorFilter: ();
+    ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: $47545D; Tolerance: 0)); Invert: True);
+    ThresholdRule: ();
+    ShadowRule: ();
+    Blacklist: '';
+  );
+begin
+  OCR.Client := LoadMatrix('images/invert.png');
+
+  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
+  Assert(OCR.RecognizeStatic(Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
 end;
 
 var
@@ -421,6 +440,7 @@ begin
   Test(@Test_MultiLine5, 'MultiLine5');
   Test(@Test_MultiLine6, 'MultiLine6');
   Test(@Test_Shadow, 'Shadow');
+  Test(@Test_Invert, 'Invert');
   Test(@Test_Static, 'Static');
   Test(@Test_Locate1, 'Locate1');
   Test(@Test_Locate2, 'Locate2');
@@ -434,6 +454,6 @@ begin
   if (Fail > 0) then
     ExitCode := 1;
 
-  //ReadLn;
+  ReadLn;
 end.
 

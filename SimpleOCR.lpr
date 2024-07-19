@@ -10,7 +10,7 @@ library SimpleOCR;
 
 uses
   Classes, SysUtils,
-  simpleocr.types, simpleocr.engine, simpleocr.filters;
+  simpleocr.base, simpleocr.engine, simpleocr.filters;
 
 {$i simbaplugin.inc}
 
@@ -88,13 +88,13 @@ initialization
     '                                                ' + LineEnding +
     '  AnyColorFilter: record                        ' + LineEnding +
     '    MaxShadowValue: Integer;                    ' + LineEnding +
-    '    Tolerance: Integer;                         ' + LineEnding +
+    '    Tolerance: Single;                          ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  ColorFilter: record                           ' + LineEnding +
     '    Colors: array of record                     ' + LineEnding +
     '      Color: Integer;                           ' + LineEnding +
-    '      Tolerance: Integer;                       ' + LineEnding +
+    '      Tolerance: Single;                        ' + LineEnding +
     '    end;                                        ' + LineEnding +
     '    Invert: Boolean;                            ' + LineEnding +
     '  end;                                          ' + LineEnding +
@@ -106,7 +106,7 @@ initialization
     '                                                ' + LineEnding +
     '  ShadowFilter: record                          ' + LineEnding +
     '    MaxShadowValue: Integer;                    ' + LineEnding +
-    '    Tolerance: Integer;                         ' + LineEnding +
+    '    Tolerance: Single;                          ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  Blacklist: String;                            ' + LineEnding +
@@ -142,15 +142,15 @@ initialization
 
   addGlobalFunc('function TSimpleOCR.LocateText(Text: String; Font: TFontSet; Filter: TOCRFilter): Single; native;', @_LapeSimpleOCR_LocateText);
 
-  //addCode([
-  //  Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TSimpleOCR', SizeOf(TSimpleOCR), 'TSimpleOCR']),
-  //  Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TOCRFilter', SizeOf(TOCRFilter), 'TOCRFilter']),
-  //  Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TOCRMatch', SizeOf(TOCRMatch), 'TOCRMatch']),
-  //  Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TFontSet', SizeOf(TFontSet), 'TFontSet']),
-  //  Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TFontGlyph', SizeOf(TFontGlyph), 'TFontGlyph'])
-  //]);
-
   addCode([
+    '{$IFDEF SIMPLEOCR_CHECK_SIZES}',
+    Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TSimpleOCR', SizeOf(TSimpleOCR), 'TSimpleOCR']),
+    Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TOCRFilter', SizeOf(TOCRFilter), 'TOCRFilter']),
+    Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TOCRMatch',  SizeOf(TOCRMatch),  'TOCRMatch']),
+    Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TFontSet',   SizeOf(TFontSet),   'TFontSet']),
+    Format('begin if SizeOf(%s) <> %d then raise "%s wrong size"; end;', ['TFontGlyph', SizeOf(TFontGlyph), 'TFontGlyph']),
+    '{$ENDIF}',
+    '',
     '{%CODETOOLS OFF}',
     'function TSimpleOCR._GetColorsMatrix(B: TBox): TIntegerMatrix; static;',
     'begin',
@@ -168,14 +168,14 @@ initialization
     'type TOCRShadowFilter      = type TOCRFilter; // 3',
     'type TOCRInvertColorFilter = type TOCRFilter; // 4',
     '',
-    'function TOCRAnyColorFilter.Create(Tolerance: Integer; MaxShadowValue: Integer = 0): TOCRAnyColorFilter; static;',
+    'function TOCRAnyColorFilter.Create(Tolerance: Single; MaxShadowValue: Integer = 0): TOCRAnyColorFilter; static;',
     'begin',
     '  Result.FilterType := 0;',
     '  Result.AnyColorFilter.Tolerance := Tolerance;',
     '  Result.AnyColorFilter.MaxShadowValue := MaxShadowValue;',
     'end;',
     '',
-    'function TOCRColorFilter.Create(Colors, Tolerances: TIntegerArray): TOCRColorFilter; static; overload;',
+    'function TOCRColorFilter.Create(Colors: TColorArray; Tolerances: TSingleArray): TOCRColorFilter; static; overload;',
     'var',
     '  I: Integer;',
     'begin',
@@ -192,7 +192,7 @@ initialization
     '  end;',
     'end;',
     '',
-    'function TOCRColorFilter.Create(Colors: TIntegerArray): TOCRColorFilter; static; overload;',
+    'function TOCRColorFilter.Create(Colors: TColorArray): TOCRColorFilter; static; overload;',
     'var',
     '  I: Integer;',
     'begin',
@@ -203,7 +203,7 @@ initialization
     '    Result.ColorFilter.Colors[I].Color := Colors[I];',
     'end;',
     '',
-    'function TOCRInvertColorFilter.Create(Colors, Tolerances: TIntegerArray): TOCRInvertColorFilter; static; overload;',
+    'function TOCRInvertColorFilter.Create(Colors: TColorArray; Tolerances: TSingleArray): TOCRInvertColorFilter; static; overload;',
     'var',
     '  I: Integer;',
     'begin',
@@ -221,7 +221,7 @@ initialization
     '  end;',
     'end;',
     '',
-    'function TOCRInvertColorFilter.Create(Colors: TIntegerArray): TOCRInvertColorFilter; static; overload;',
+    'function TOCRInvertColorFilter.Create(Colors: TColorArray): TOCRInvertColorFilter; static; overload;',
     'var',
     '  I: Integer;',
     'begin',
@@ -240,7 +240,7 @@ initialization
     '  Result.ThresholdFilter.Invert := Invert;',
     'end;',
     '',
-    'function TOCRShadowFilter.Create(MaxShadowValue: Integer = 25; Tolerance: Integer = 5): TOCRShadowFilter; static;',
+    'function TOCRShadowFilter.Create(MaxShadowValue: Integer = 25; Tolerance: Single = 5): TOCRShadowFilter; static;',
     'begin',
     '  Result.FilterType := 3;',
     '  Result.ShadowFilter.MaxShadowValue := MaxShadowValue;',
@@ -285,7 +285,7 @@ initialization
     '    end;',
     '',
     '  if (Text <> "") then',
-    '    Result := StrToInt(Text);',
+    '    Result := StrToInt64(Text);',
     'end;',
     '',
     'function TSimpleOCR.LocateText(Area: TBox; Text: String; constref Font: TFontSet; Filter: TOCRFilter): Single; overload;',
