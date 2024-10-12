@@ -100,8 +100,8 @@ initialization
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  ThresholdFilter: record                       ' + LineEnding +
-    '    Amount: Integer;                            ' + LineEnding +
     '    Invert: Boolean;                            ' + LineEnding +
+    '    C: Integer;                                 ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  ShadowFilter: record                          ' + LineEnding +

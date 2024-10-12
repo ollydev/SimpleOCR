@@ -30,7 +30,7 @@ begin
   Image.Free();
 end;
 
-procedure SaveMatrix(Matrix: TIntegerMatrix; FileName: String);
+procedure SaveMatrix(Matrix: TColorRGBAMatrix; FileName: String);
 var
   Description: TRawImageDescription;
   Image: TLazIntfImage;
@@ -43,7 +43,7 @@ begin
 
   for X := 0 to Image.Width - 1 do
     for Y := 0 to Image.Height - 1 do
-      Image.Colors[X, Y] := TColorToFPColor(Matrix[Y, X]);
+      Image.Colors[X, Y] := TColorToFPColor(TColor(Matrix[Y, X]));
 
   Image.SaveToFile(FileName);
   Image.Free();
@@ -284,7 +284,6 @@ const
   );
 begin
   OCR.Client := LoadMatrix('images/shadow.png');
-  SaveMatrix(TIntegerMatrix(OCR.Client), 'olly.bmp');
   Assert(OCR.Recognize(Filter, FONT_PLAIN_11) = '53');
 end;
 
@@ -309,7 +308,7 @@ const
     FilterType: EOCRFilterType.THRESHOLD;
     AnyColorFilter: ();
     ColorRule: ();
-    ThresholdRule: (Amount: 10; Invert: False);
+    ThresholdRule: (Invert: False; C: 10);
     ShadowRule: ();
     Blacklist: '';
   );
@@ -324,7 +323,7 @@ const
     FilterType: EOCRFilterType.THRESHOLD;
     AnyColorFilter: ();
     ColorRule: ();
-    ThresholdRule: (Amount: 50; Invert: False);
+    ThresholdRule: (Invert: False; C: 0);
     ShadowRule: ();
     Blacklist: '';
   );
@@ -333,13 +332,34 @@ begin
   Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Showing items:');
 end;
 
+procedure Test_ThresholdInvert;
+const
+  Filter: TOCRFilter = (
+    FilterType: EOCRFilterType.THRESHOLD;
+    AnyColorFilter: ();
+    ColorRule: ();
+    ThresholdRule: (Invert: True; C: 0);
+    ShadowRule: ();
+    Blacklist: '';
+  );
+var
+  Lines: TStringArray;
+begin
+  OCR.Client := LoadMatrix('images/thresh_inv.png');
+  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
+
+  Assert(Length(Lines) = 2);
+  Assert(Lines[0] = 'Where would you like to teleport to?');
+  Assert(Lines[1] = 'Al Kharid PvP Arena.');
+end;
+
 procedure Test_Locate1;
 const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.THRESHOLD;
     AnyColorFilter: ();
     ColorRule: ();
-    ThresholdRule: (Amount: 10; Invert: False);
+    ThresholdRule: (Invert: False; C: 10);
     ShadowRule: ();
     Blacklist: '';
   );
@@ -433,6 +453,7 @@ begin
   Test(@Test_UpText, 'UpText');
   Test(@Test_Threshold1, 'Threshold1');
   Test(@Test_Threshold2, 'Threshold2');
+  Test(@Test_ThresholdInvert, 'Threshold Invert');
   Test(@Test_MultiLine1, 'MultiLine1');
   Test(@Test_MultiLine2, 'MultiLine2');
   Test(@Test_MultiLine3, 'MultiLine3');

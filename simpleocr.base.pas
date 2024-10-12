@@ -18,6 +18,8 @@ type
   TStringArray = array of String;
   TIntegerArray = array of Integer;
   TIntegerMatrix = array of TIntegerArray;
+  TByteArray = array of Byte;
+  TByteMatrix = array of TByteArray;
   TSingleArray = array of Single;
 
   TPoint = record
@@ -37,6 +39,15 @@ type
   end;
   TColorRGBAMatrix = array of array of TColorRGBA;
 
+  TColorRGBAMatrixHelper = type helper for TColorRGBAMatrix
+  private
+    function GetWidth: Integer; inline;
+    function GetHeight: Integer; inline;
+  public
+    property Width: Integer read GetWidth;
+    property Height: Integer read GetHeight;
+  end;
+
 procedure Swap(var A, B: TPoint); inline;
 procedure Swap(var A, B: Integer); inline;
 
@@ -47,6 +58,8 @@ function Mode(Self: TIntegerArray; Hi: Integer): Integer;
 
 function SimilarColors(const Color1, Color2: TColorRGBA; const Tolerance: Single): Boolean; inline;
 function IsShadow(const Color: TColorRGBA; const MaxValue: Integer): Boolean; inline;
+
+function ToGreyScale(Matrix: TColorRGBAMatrix): TByteMatrix;
 
 type
   TSimpleImage = class(TObject)
@@ -226,9 +239,36 @@ begin
   Result := (Color.R <= MaxValue) and (Color.G <= MaxValue) and (Color.B <= MaxValue + 5); // allow a little more in the blue channel only
 end;
 
+function ToGreyScale(Matrix: TColorRGBAMatrix): TByteMatrix;
+var
+  X, Y, W, H: Integer;
+begin
+  W := Matrix.Width;
+  H := Matrix.Height;
+  SetLength(Result, H, W);
+  Dec(W);
+  Dec(H);
+  for Y := 0 to H do
+    for X := 0 to W do
+      Result[Y, X] := Round(Matrix[Y, X].R * 0.299 + Matrix[Y, X].G * 0.587 + Matrix[Y, X].B * 0.114);
+end;
+
 procedure OCRException(const Msg: String; Args: array of const);
 begin
   raise Exception.Create(Format(Msg, Args));
+end;
+
+function TColorRGBAMatrixHelper.GetWidth: Integer;
+begin
+  if (Length(Self) > 0) then
+    Result := Length(Self[0])
+  else
+    Result := 0;
+end;
+
+function TColorRGBAMatrixHelper.GetHeight: Integer;
+begin
+  Result := Length(Self);
 end;
 
 constructor TSimpleImage.Create(FileName: String);

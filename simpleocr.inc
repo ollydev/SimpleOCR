@@ -1,6 +1,7 @@
 {$mode objfpc}{$H+}
 
 {$modeswitch advancedrecords}
+{$modeswitch typehelpers}
 {$modeswitch arrayoperators}
 
 {$scopedenums on}

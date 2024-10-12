@@ -40,8 +40,8 @@ type
     end;
 
     ThresholdRule: record
-      Amount: Integer;
       Invert: Boolean;
+      C: Integer;
     end;
 
     ShadowRule: record
@@ -157,68 +157,102 @@ begin
   end;
 end;
 
+// https://github.com/galfar/imaginglib/blob/master/Extensions/ImagingBinary.pas#L79
 function ApplyThresholdFilter(constref Filter: TOCRFilter; var Matrix: TColorRGBAMatrix; out Bounds: TBox): Boolean;
 var
-  X, Y, W, H: Integer;
-  Threshold: UInt8;
-  Counter: Int64;
-  Temp: TIntegerMatrix;
-  Hit, Miss: Integer;
+  Histogram: array[Byte] of Single;
+  Level, Max, Min, I, J, NumPixels: Integer;
+  Mean, Variance: Single;
+  Mu, Omega, LevelMean, LargestMu: Single;
+  Greyscale: TByteMatrix;
+  Grey: Byte;
+  X,Y,W,H: Integer;
 begin
-  H := Length(Matrix);
-  W := Length(Matrix[0]);
+  W := Matrix.Width - 1;
+  H := Matrix.Height - 1;
+  Greyscale := ToGreyScale(Matrix);
 
-  SetLength(Temp, H, W);
+  FillByte(Histogram[0], SizeOf(Histogram), 0);
+  Min := 255;
+  Max := 0;
+  Level := 0;
+  NumPixels := Length(Matrix[0]) * Length(Matrix);
 
-  Dec(W);
-  Dec(H);
-
-  //Finding the threshold - While at it set blue-scale to the RGB mean (needed for later).
-  Threshold := 0;
-
-  Counter := 0;
+  // Compute histogram and determine min and max pixel values
   for Y := 0 to H do
     for X := 0 to W do
     begin
-      with TColorRGBA(Matrix[Y, X]) do
-        Temp[Y, X] := (B + G + R) div 3;
+      Grey := Greyscale[Y,X];
 
-      Counter += Temp[Y, X];
+      Histogram[Grey] := Histogram[Grey] + 1.0;
+      if (Grey < Min) then
+        Min := Grey;
+      if (Grey > Max) then
+        Max := Grey;
     end;
 
-  Threshold := (Counter div ((W * H) - 1)) + Filter.ThresholdRule.Amount;
+  // Normalize histogram
+  for I := 0 to 255 do
+    Histogram[I] := Histogram[I] / NumPixels;
 
-  case Filter.ThresholdRule.Invert of
-    True:
-      begin
-        Hit  := $000000;
-        Miss := $FFFFFF;
-      end;
-    False:
-      begin
-        Hit  := $FFFFFF;
-        Miss := $000000;
-      end;
+  // Compute image mean and variance
+  Mean := 0.0;
+  Variance := 0.0;
+  for I := 0 to 255 do
+    Mean := Mean + (I + 1) * Histogram[I];
+  for I := 0 to 255 do
+    Variance := Variance + Sqr(I + 1 - Mean) * Histogram[I];
+
+  // Now finally compute threshold level
+  LargestMu := 0;
+
+  for I := 0 to 255 do
+  begin
+    Omega := 0.0;
+    LevelMean := 0.0;
+
+    for J := 0 to I - 1 do
+    begin
+      Omega := Omega + Histogram[J];
+      LevelMean := LevelMean + (J + 1) * Histogram[J];
+    end;
+
+    Mu := Sqr(Mean * Omega - LevelMean);
+    Omega := Omega * (1.0 - Omega);
+
+    if Omega > 0.0 then
+      Mu := Mu / Omega
+    else
+      Mu := 0;
+
+    if Mu > LargestMu then
+    begin
+      LargestMu := Mu;
+      Level := I;
+    end;
   end;
+
+  Level := Level - Filter.ThresholdRule.C;
 
   Bounds.X1 := $FFFFFF;
   Bounds.Y1 := $FFFFFF;
   Bounds.X2 := 0;
   Bounds.Y2 := 0;
 
+  // Do thresholding using computed level
   for Y := 0 to H do
     for X := 0 to W do
     begin
-      if (Temp[Y, X] > Threshold) then
+      if (Filter.ThresholdRule.Invert and (Greyscale[Y, X] <= Level)) or ((not Filter.ThresholdRule.Invert) and (Greyscale[Y, X] >= Level)) then
       begin
-        Matrix[Y, X].AsInteger := Hit;
-
         if (X < Bounds.X1) then Bounds.X1 := X;
         if (Y < Bounds.Y1) then Bounds.Y1 := Y;
         if (X > Bounds.X2) then Bounds.X2 := X;
         if (Y > Bounds.Y2) then Bounds.Y2 := Y;
+
+        Matrix[Y, X].AsInteger := $00FFFFFF;
       end else
-        Matrix[Y, X].AsInteger := Miss;
+        Matrix[Y, X].AsInteger := $00000000;
     end;
 
   Result := (Bounds.X1 <> $FFFFFF) and (Bounds.Y1 <> $FFFFFF) and (Bounds.X2 <> 0) and (Bounds.Y2 <> 0);
