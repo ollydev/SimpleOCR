@@ -15,7 +15,7 @@ uses
   simpleocr.base, simpleocr.filters;
 
 type
-  TFontGlyph = record
+  TFontGlyph = packed record
     ImageWidth, ImageHeight: Integer;
     Width, Height: Integer;
     CharacterBounds: TBox;
@@ -27,7 +27,7 @@ type
   end;
   TFontGlyphArray = array of TFontGlyph;
 
-  TFontSet = record
+  TFontSet = packed record
   public
     Name: String;
     SpaceWidth: Integer;
@@ -43,7 +43,7 @@ type
     class function Create(FontPath: String; Space: Integer = 4): TFontSet; static;
   end;
 
-  TOCRMatch = record
+  TOCRMatch = packed record
     Text: String;
     Bounds: TBox;
     Hits: Integer;
@@ -52,7 +52,7 @@ type
 
   TOCRTarget = TColorRGBAMatrix;
 
-  TSimpleOCR = record
+  TSimpleOCR = packed record
   private
     FClient: TOCRTarget;
     FMatches: TOCRMatchArray;
@@ -67,7 +67,7 @@ type
     FMaxShadowValue: Integer;
     FTolerance: Single;
 
-    function Init(Target: TOCRTarget;constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
+    function Init(Target: TOCRTarget; constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 
     function getGlpyhIndices(Blacklist: String): TIntegerArray;
     function addMatch(Match: TOCRMatch): String;
@@ -648,13 +648,12 @@ var
 begin
   Result := [];
 
-  Indices := getGlpyhIndices(Filter.Blacklist);
-  IndicesNoSmall := getGlpyhIndices(Filter.Blacklist + '~^;`_-:.,'+#39+#34);
-
   if Self.Init(Target, FontSet, Filter, False) then
   begin
-    SearchBox := FSearchArea;
+    Indices := getGlpyhIndices(Filter.Blacklist);
+    IndicesNoSmall := getGlpyhIndices(Filter.Blacklist + '~^;`_-:.,'+#39+#34);
 
+    SearchBox := FSearchArea;
     while (SearchBox.Y1 + (FFontSet^.MaxGlyphHeight div 2) < FSearchArea.Y2) do
     begin
       if RecognizeSomething(SearchBox, Match) then

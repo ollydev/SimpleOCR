@@ -23,26 +23,26 @@ type
     INVERT_COLOR
   );
 
-  TOCRFilter = record
+  TOCRFilter = packed record
     FilterType: EOCRFilterType;
 
-    AnyColorFilter: record
+    AnyColorFilter: packed record
       MaxShadowValue: Integer;
       Tolerance: Single;
     end;
 
-    ColorRule: record
+    ColorRule: packed record
       Colors: TIntegerArray;
       Tolerances: TSingleArray;
       Invert: Boolean;
     end;
 
-    ThresholdRule: record
+    ThresholdRule: packed record
       Invert: Boolean;
       C: Integer;
     end;
 
-    ShadowRule: record
+    ShadowRule: packed record
       MaxShadowValue: Integer;
       Tolerance: Single;
     end;

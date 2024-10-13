@@ -1,4 +1,4 @@
-﻿name: Build
+﻿name: build
 
 on: 
   push:
@@ -7,86 +7,91 @@ on:
   pull_request:
     branches:
       - '**'
-
-env:
-  FPC_VER: release_3_2_2
-  LAZ_VER: lazarus_2_2_4
       
 jobs:
   build:
     name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.runs-on }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
-      matrix:
-        config:            
+      matrix:   
+        config:     
           - name: Windows 64
-            os: windows-latest
+            runs-on: windows-latest
             build-mode: WIN64
             binary: libsimpleocr64.dll
             
           - name: Windows 32
-            os: windows-latest
+            runs-on: windows-latest
             build-mode: WIN32
             binary: libsimpleocr32.dll
 
           - name: Linux 64
-            os: ubuntu-latest
+            runs-on: ubuntu-22.04
             build-mode: LINUX64
             binary: libsimpleocr64.so
-          
-          - name: Linux AArch64  
-            os: ubuntu-latest
-            build-mode: LINUX-AARCH64
-            binary: libsimpleocr64.so.aarch64
             
           - name: MacOS 64
-            os: macos-latest
+            runs-on: macos-13
             build-mode: MACOS
             binary: libsimpleocr64.dylib
 
           - name: MacOS AArch64
-            os: macos-latest
+            runs-on: macos-13
             build-mode: MACOS-AARCH64
             binary: libsimpleocr64.dylib.aarch64
          
     steps:
-      - uses: actions/checkout@v3.5.3
-      
-      - name: Install Lazarus
-        uses: ollydev/setup-lazarus-fpcup@v3.3
+      - uses: actions/checkout@v4.1.7
+        with: 
+          submodules: true
+
+      - name: Install Lazarus (MacOS)
+        if: startsWith(matrix.config.name, 'MacOS') == true
+        uses: ollydev/setup-lazarus@v3.3
         with:
-          laz: ${{ env.LAZ_VER }}
-          fpc: ${{ env.FPC_VER }}
+          laz-url: https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%203.6/Lazarus-3.6-macosx-x86_64.pkg
+          fpc-url: |
+            https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%203.6/fpc-3.2.2.intelarm64-macosx.dmg
+            https://sourceforge.net/projects/lazarus/files/Lazarus%20macOS%20x86-64/Lazarus%203.6/fpc-src-3.2.2-20210709-macosx.dmg
+
+      - name: Install Lazarus (Linux)
+        if: startsWith(matrix.config.name, 'Linux') == true
+        uses: ollydev/setup-lazarus@v3.3
+        with:
+          laz-url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20amd64%20DEB/Lazarus%203.6/lazarus-project_3.6.0-0_amd64.deb
+          fpc-url: |
+            https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20amd64%20DEB/Lazarus%203.6/fpc-laz_3.2.2-210709_amd64.deb
+            https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20amd64%20DEB/Lazarus%203.6/fpc-src_3.2.2-210709_amd64.deb
+
+      - name: Install Lazarus (Windows 32)
+        if: startsWith(matrix.config.name, 'Windows 32') == true
+        uses: ollydev/setup-lazarus@v3.3
+        with:
+          laz-url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Windows%2032%20bits/Lazarus%203.6/lazarus-3.6-fpc-3.2.2-win32.exe
+
+      - name: Install Lazarus (Windows 64)
+        if: startsWith(matrix.config.name, 'Windows 64') == true
+        uses: ollydev/setup-lazarus@v3.3
+        with:
+          laz-url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Windows%2064%20bits/Lazarus%203.6/lazarus-3.6-fpc-3.2.2-win64.exe
           
       - name: Build SimpleOCR
-        run: |
-          lazbuild --build-mode=${{ matrix.config.build-mode }} SimpleOCR.lpi
-
-      - name: Upload Binary 
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: ${{ matrix.config.binary }}
-          path: ${{ matrix.config.binary }}
-
-  testing:
-    runs-on: windows-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v3.5.3
-
-      - name: Install Lazarus
-        uses: ollydev/setup-lazarus-fpcup@v3.3
-        with:
-          laz: ${{ env.LAZ_VER }}
-          fpc: ${{ env.FPC_VER }}
+        run: lazbuild --build-mode=${{ matrix.config.build-mode }} SimpleOCR.lpi
 
       - name: Build Tester
-        run: |
-          cd tester
-          lazbuild tester.lpi
+        working-directory: tester
+        run: lazbuild tester.lpi
 
       - name: Run Tests
-        run: |
-          cd tester  
-          ./tester.exe   
+        working-directory: tester
+        run: ./tester
+
+      - name: Upload Binary 
+        uses: actions/upload-artifact@v4.3.4
+        with:
+          name: ${{ matrix.config.binary }}
+          path: ${{ matrix.config.binary }} 

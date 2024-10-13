@@ -61,7 +61,7 @@ end;
 
 initialization
   addGlobalType(
-    'record                                          ' + LineEnding +
+    'packed record                                   ' + LineEnding +
     '  ImageWidth, ImageHeight: Integer;             ' + LineEnding +
     '  Width, Height: Integer;                       ' + LineEnding +
     '  CharacterBounds: TBox;                        ' + LineEnding +
@@ -74,7 +74,7 @@ initialization
     'TFontGlyph');
 
   addGlobalType(
-    'record                                          ' + LineEnding +
+    'packed record                                   ' + LineEnding +
     '  Name: String;                                 ' + LineEnding +
     '  SpaceWidth: Integer;                          ' + LineEnding +
     '  Glyphs: array of TFontGlyph;                  ' + LineEnding +
@@ -83,27 +83,28 @@ initialization
     'end;',
     'TFontSet');
 
+
   addGlobalType(
-    'record                                          ' + LineEnding +
+    'packed record                                   ' + LineEnding +
     '  FilterType: Integer;                          ' + LineEnding +
     '                                                ' + LineEnding +
-    '  AnyColorFilter: record                        ' + LineEnding +
+    '  AnyColorFilter: packed record                 ' + LineEnding +
     '    MaxShadowValue: Integer;                    ' + LineEnding +
     '    Tolerance: Single;                          ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
-    '  ColorFilter: record                           ' + LineEnding +
+    '  ColorFilter: packed record                    ' + LineEnding +
     '    Colors: TIntegerArray;                      ' + LineEnding +
     '    Tolerances: TSingleArray;                   ' + LineEnding +
     '    Invert: Boolean;                            ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
-    '  ThresholdFilter: record                       ' + LineEnding +
+    '  ThresholdFilter: packed record                ' + LineEnding +
     '    Invert: Boolean;                            ' + LineEnding +
     '    C: Integer;                                 ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
-    '  ShadowFilter: record                          ' + LineEnding +
+    '  ShadowFilter: packed record                   ' + LineEnding +
     '    MaxShadowValue: Integer;                    ' + LineEnding +
     '    Tolerance: Single;                          ' + LineEnding +
     '  end;                                          ' + LineEnding +
@@ -113,7 +114,7 @@ initialization
     'TOCRFilter');
 
   addGlobalType(
-    'record                ' + LineEnding +
+    'packed record                ' + LineEnding +
     '  Text: String;       ' + LineEnding +
     '  Bounds: TBox;       ' + LineEnding +
     '  Hits: Integer;      ' + LineEnding +
