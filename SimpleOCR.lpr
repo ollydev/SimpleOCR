@@ -22,6 +22,7 @@ type
   PSimpleOCR = ^TSimpleOCR;
   PFontSet = ^TFontSet;
   POCRFilter = ^TOCRFilter;
+  POCRTarget = ^TOCRTarget;
 
 procedure _LapeFontSet_Create(const Params: PParamArray; const Result: Pointer); cdecl;
 begin
@@ -38,24 +39,24 @@ begin
   PPointArray(Result)^ := PFontSet(Params^[0])^.TextToTPA(PString(Params^[1])^);
 end;
 
-procedure _LapeSimpleOCR_LocateText(const Params: PParamArray; const Result: Pointer); cdecl;
+procedure _LapeSimpleOCR_Locate(const Params: PParamArray; const Result: Pointer); cdecl;
 begin
-  PSingle(Result)^ := PSimpleOCR(Params^[0])^.LocateText(PString(Params^[1])^, PFontSet(Params^[2])^, POCRFilter(Params^[3])^);
+  PSingle(Result)^ := PSimpleOCR(Params^[0])^.Locate(POCRTarget(Params^[1])^, PString(Params^[2])^, PFontSet(Params^[3])^, POCRFilter(Params^[4])^);
 end;
 
 procedure _LapeSimpleOCR_Recognize(const Params: PParamArray; const Result: Pointer); cdecl;
 begin
-  PString(Result)^ := PSimpleOCR(Params^[0])^.Recognize(POCRFilter(Params^[1])^, PFontSet(Params^[2])^);
+  PString(Result)^ := PSimpleOCR(Params^[0])^.Recognize(POCRTarget(Params^[1])^, POCRFilter(Params^[2])^, PFontSet(Params^[3])^);
 end;
 
 procedure _LapeSimpleOCR_RecognizeStatic(const Params: PParamArray; const Result: Pointer); cdecl;
 begin
-  PString(Result)^ := PSimpleOCR(Params^[0])^.RecognizeStatic(POCRFilter(Params^[1])^, PFontSet(Params^[2])^);
+  PString(Result)^ := PSimpleOCR(Params^[0])^.RecognizeStatic(POCRTarget(Params^[1])^, POCRFilter(Params^[2])^, PFontSet(Params^[3])^);
 end;
 
 procedure _LapeSimpleOCR_RecognizeLines(const Params: PParamArray; const Result: Pointer); cdecl;
 begin
-  PStringArray(Result)^ := PSimpleOCR(Params^[0])^.RecognizeLines(POCRFilter(Params^[1])^, PFontSet(Params^[2])^);
+  PStringArray(Result)^ := PSimpleOCR(Params^[0])^.RecognizeLines(POCRTarget(Params^[1])^, POCRFilter(Params^[2])^, PFontSet(Params^[3])^);
 end;
 
 initialization
@@ -92,10 +93,8 @@ initialization
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
     '  ColorFilter: record                           ' + LineEnding +
-    '    Colors: array of record                     ' + LineEnding +
-    '      Color: Integer;                           ' + LineEnding +
-    '      Tolerance: Single;                        ' + LineEnding +
-    '    end;                                        ' + LineEnding +
+    '    Colors: TIntegerArray;                      ' + LineEnding +
+    '    Tolerances: TSingleArray;                   ' + LineEnding +
     '    Invert: Boolean;                            ' + LineEnding +
     '  end;                                          ' + LineEnding +
     '                                                ' + LineEnding +
@@ -121,6 +120,8 @@ initialization
     'end;',
     'TOCRMatch');
 
+  addGlobalType('TIntegerMatrix', 'TOCRTarget');
+
   addGlobalType(
     'packed record                                                                    ' + LineEnding +
     '  Client: TIntegerMatrix;                                                        ' + LineEnding +
@@ -132,15 +133,15 @@ initialization
     'end;',
     'TSimpleOCR');
 
-  addGlobalFunc('function TFontSet.Create(FileName: String; SpaceWidth: Integer = 4): TFontSet; static; native;', @_LapeFontSet_Create);
+  addGlobalFunc('function TFontSet.Create(Directory: String; SpaceWidth: Integer = 4): TFontSet; static; native;', @_LapeFontSet_Create);
   addGlobalFunc('function TFontSet.TextToMatrix(Text: String): TIntegerMatrix; native;', @_LapeFontSet_TextToMatrix);
   addGlobalFunc('function TFontSet.TextToTPA(Text: String): TPointArray; native;', @_LapeFontSet_TextToTPA);
 
-  addGlobalFunc('function TSimpleOCR.Recognize(Filter: TOCRFilter; Font: TFontSet): String; native;', @_LapeSimpleOCR_Recognize);
-  addGlobalFunc('function TSimpleOCR.RecognizeLines(Filter: TOCRFilter; Font: TFontSet): TStringArray; native;', @_LapeSimpleOCR_RecognizeLines);
-  addGlobalFunc('function TSimpleOCR.RecognizeStatic(Filter: TOCRFilter; Font: TFontSet): String; native;', @_LapeSimpleOCR_RecognizeStatic);
+  addGlobalFunc('function TSimpleOCR.Recognize(Target: TOCRTarget; Filter: TOCRFilter; Font: TFontSet): String; native;', @_LapeSimpleOCR_Recognize);
+  addGlobalFunc('function TSimpleOCR.RecognizeLines(Target: TOCRTarget; Filter: TOCRFilter; Font: TFontSet): TStringArray; native;', @_LapeSimpleOCR_RecognizeLines);
+  addGlobalFunc('function TSimpleOCR.RecognizeStatic(Target: TOCRTarget; Filter: TOCRFilter; Font: TFontSet): String; native;', @_LapeSimpleOCR_RecognizeStatic);
 
-  addGlobalFunc('function TSimpleOCR.LocateText(Text: String; Font: TFontSet; Filter: TOCRFilter): Single; native;', @_LapeSimpleOCR_LocateText);
+  addGlobalFunc('function TSimpleOCR.Locate(Target: TOCRTarget; Text: String; Font: TFontSet; Filter: TOCRFilter): Single; native;', @_LapeSimpleOCR_Locate);
 
   addCode([
     '{$IFDEF SIMPLEOCR_CHECK_SIZES}',
@@ -183,24 +184,15 @@ initialization
     '    raise "TOCRColorFilter.Create: Length(Colors) <> Length(Tolerances)";',
     '',
     '  Result.FilterType := 1;',
-    '',
-    '  SetLength(Result.ColorFilter.Colors, Length(Colors));',
-    '  for I := 0 to High(Colors) do',
-    '  begin',
-    '    Result.ColorFilter.Colors[I].Color := Colors[I];',
-    '    Result.ColorFilter.Colors[I].Tolerance := Tolerances[I];',
-    '  end;',
+    '  Result.ColorFilter.Colors := TIntegerArray(Colors);',
+    '  Result.ColorFilter.Tolerances := Tolerances;',
     'end;',
     '',
     'function TOCRColorFilter.Create(Colors: TColorArray): TOCRColorFilter; static; overload;',
-    'var',
-    '  I: Integer;',
     'begin',
     '  Result.FilterType := 1;',
-    '',
-    '  SetLength(Result.ColorFilter.Colors, Length(Colors));',
-    '  for I := 0 to High(Colors) do',
-    '    Result.ColorFilter.Colors[I].Color := Colors[I];',
+    '  Result.ColorFilter.Colors := TIntegerArray(Colors);',
+    '  SetLength(Result.ColorFilter.Tolerances, Length(Colors));',
     'end;',
     '',
     'function TOCRInvertColorFilter.Create(Colors: TColorArray; Tolerances: TSingleArray): TOCRInvertColorFilter; static; overload;',
@@ -212,13 +204,8 @@ initialization
     '',
     '  Result.FilterType := 4;',
     '  Result.ColorFilter.Invert := True;',
-    '',
-    '  SetLength(Result.ColorFilter.Colors, Length(Colors));',
-    '  for I := 0 to High(Colors) do',
-    '  begin',
-    '    Result.ColorFilter.Colors[I].Color := Colors[I];',
-    '    Result.ColorFilter.Colors[I].Tolerance := Tolerances[I];',
-    '  end;',
+    '  Result.ColorFilter.Colors := TIntegerArray(Colors);',
+    '  Result.ColorFilter.Tolerances := Tolerances;',
     'end;',
     '',
     'function TOCRInvertColorFilter.Create(Colors: TColorArray): TOCRInvertColorFilter; static; overload;',
@@ -227,17 +214,15 @@ initialization
     'begin',
     '  Result.FilterType := 4;',
     '  Result.ColorFilter.Invert := True;',
-    '',
-    '  SetLength(Result.ColorFilter.Colors, Length(Colors));',
-    '  for I := 0 to High(Colors) do',
-    '    Result.ColorFilter.Colors[I].Color := Colors[I];',
+    '  Result.ColorFilter.Colors := TIntegerArray(Colors);',
+    '  SetLength(Result.ColorFilter.Tolerances, Length(Colors));',
     'end;',
     '',
-    'function TOCRThresholdFilter.Create(Amount: Integer; Invert: Boolean = False): TOCRThresholdFilter; static;',
+    'function TOCRThresholdFilter.Create(Invert: Boolean = False; C: Integer = 0): TOCRThresholdFilter; static;',
     'begin',
     '  Result.FilterType := 2;',
-    '  Result.ThresholdFilter.Amount := Amount;',
     '  Result.ThresholdFilter.Invert := Invert;',
+    '  Result.ThresholdFilter.C := C;',
     'end;',
     '',
     'function TOCRShadowFilter.Create(MaxShadowValue: Integer = 25; Tolerance: Single = 5): TOCRShadowFilter; static;',
@@ -249,28 +234,23 @@ initialization
     '',
     'function TSimpleOCR.Recognize(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): String; overload;',
     'begin',
-    '  Self.Client := TSimpleOCR._GetColorsMatrix(Area);',
     '  Self.Offset := [Area.X1, Area.Y1];',
     '',
-    '  Result := Self.Recognize(Filter, Font);',
+    '  Result := Self.Recognize(TSimpleOCR._GetColorsMatrix(Area), Filter, Font);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeStatic(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): String; overload;',
     'begin',
-    '  Self.Client := TSimpleOCR._GetColorsMatrix(Area);',
     '  Self.Offset := [Area.X1, Area.Y1];',
     '',
-    '  Result := Self.RecognizeStatic(Filter, Font);',
+    '  Result := Self.RecognizeStatic(TSimpleOCR._GetColorsMatrix(Area), Filter, Font);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeLines(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): TStringArray; overload;',
-    'var',
-    '  I: Integer;',
     'begin',
-    '  Self.Client := TSimpleOCR._GetColorsMatrix(Area);',
     '  Self.Offset := [Area.X1, Area.Y1];',
     '',
-    '  Result := Self.RecognizeLines(Filter, Font);',
+    '  Result := Self.RecognizeLines(TSimpleOCR._GetColorsMatrix(Area), Filter, Font);',
     'end;',
     '',
     'function TSimpleOCR.RecognizeNumber(Area: TBox; Filter: TOCRFilter; constref Font: TFontSet): Int64;',
@@ -288,12 +268,11 @@ initialization
     '    Result := StrToInt64(Text);',
     'end;',
     '',
-    'function TSimpleOCR.LocateText(Area: TBox; Text: String; constref Font: TFontSet; Filter: TOCRFilter): Single; overload;',
+    'function TSimpleOCR.Locate(Area: TBox; Text: String; constref Font: TFontSet; Filter: TOCRFilter): Single; overload;',
     'begin',
-    '  Self.Client := TSimpleOCR._GetColorsMatrix(Area);',
     '  Self.Offset := [Area.X1, Area.Y1];',
     '',
-    '  Result := Self.LocateText(Text, Font, Filter);',
+    '  Result := Self.Locate(TSimpleOCR._GetColorsMatrix(Area), Text, Font, Filter);',
     'end;'
   ]);
 

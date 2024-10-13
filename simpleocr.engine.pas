@@ -14,10 +14,6 @@ uses
   Classes, SysUtils,
   simpleocr.base, simpleocr.filters;
 
-const
-  ALPHA_NUMERIC_SYM = ['a'..'z', 'A'..'Z', '0'..'9','%','&','#','$','[',']','{','}','@','!','?'];
-
-
 type
   TFontGlyph = record
     ImageWidth, ImageHeight: Integer;
@@ -54,9 +50,11 @@ type
   end;
   TOCRMatchArray = array of TOCRMatch;
 
+  TOCRTarget = TColorRGBAMatrix;
+
   TSimpleOCR = record
   private
-    FClient: TColorRGBAMatrix;
+    FClient: TOCRTarget;
     FMatches: TOCRMatchArray;
     FOffset: TPoint; // apply a offset to TOCRMatch
 
@@ -69,7 +67,7 @@ type
     FMaxShadowValue: Integer;
     FTolerance: Single;
 
-    function Init(constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
+    function Init(Target: TOCRTarget;constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 
     function getGlpyhIndices(Blacklist: String): TIntegerArray;
     function addMatch(Match: TOCRMatch): String;
@@ -79,13 +77,13 @@ type
   public
     class function InternalDataSize: SizeUInt; static;
 
-    function LocateText(Text: String; constref FontSet: TFontSet; Filter: TOCRFilter): Single;
+    function Locate(Target: TOCRTarget; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter): Single;
 
-    function Recognize(Filter: TOCRFilter; constref FontSet: TFontSet): String;
-    function RecognizeStatic(Filter: TOCRFilter; constref FontSet: TFontSet): String;
-    function RecognizeLines(Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray;
+    function Recognize(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): String;
+    function RecognizeStatic(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): String;
+    function RecognizeLines(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray;
 
-    property Client: TColorRGBAMatrix read FClient write FClient;
+    property Client: TOCRTarget read FClient;
     property Matches: TOCRMatchArray read FMatches;
   end;
 
@@ -93,15 +91,6 @@ implementation
 
 uses
   GraphType, IntfGraphics, Graphics, Math;
-
-function ContainsAlphaNumSym(const text: string): Boolean; inline;
-var i: Int32;
-begin
-  Result := False;
-  for i:=1 to Length(text) do
-    if Text[i] in ALPHA_NUMERIC_SYM then
-      Exit(True);
-end;
 
 function TFontSet.TextToMatrix(Text: String): TIntegerMatrix;
 var
@@ -267,17 +256,17 @@ begin
   end;
 end;
 
-function TSimpleOCR.Init(constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
+function TSimpleOCR.Init(Target: TOCRTarget; constref FontSet: TFontSet; Filter: TOCRFilter; Static: Boolean): Boolean;
 begin
-  FHeight := Length(FClient);
+  FHeight := Target.Height;
   if FHeight > 0 then
-    FWidth := Length(FClient[0]);
+    FWidth := Target.Width;
   Result := (FHeight > 0) and (FWidth > 0);
 
   if Result then
   begin
     FMatches := [];
-    FClient := TColorRGBAMatrix(FClient);
+    FClient := Target;
     FFontSet := @FontSet;
     FBinaryImage := Filter.FilterType <> EOCRFilterType.ANY_COLOR;
     FMaxShadowValue := Filter.AnyColorFilter.MaxShadowValue;
@@ -483,7 +472,7 @@ begin
   Dec(Result, SizeOf(TPoint));  // FOffset
 end;
 
-function TSimpleOCR.LocateText(Text: String; constref FontSet: TFontSet; Filter: TOCRFilter): Single;
+function TSimpleOCR.Locate(Target: TOCRTarget; Text: String; constref FontSet: TFontSet; Filter: TOCRFilter): Single;
 var
   X, Y: Integer;
   Color, Bad, I: Integer;
@@ -504,7 +493,7 @@ begin
     Exit;
   TextHeight := Length(TextMatrix);
   TextWidth := Length(TextMatrix[0]);
-  if not Self.Init(FontSet, Filter, True) then
+  if not Self.Init(Target, FontSet, Filter, True) then
     Exit;
 
   SetLength(CharacterIndices, TextWidth * TextHeight);
@@ -601,13 +590,13 @@ begin
   addMatch(BestMatch);
 end;
 
-function TSimpleOCR.Recognize(Filter: TOCRFilter; constref FontSet: TFontSet): String;
+function TSimpleOCR.Recognize(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): String;
 var
   Match: TOCRMatch;
 begin
   Result := '';
 
-  if Self.Init(FontSet, Filter, False) then
+  if Self.Init(Target, FontSet, Filter, False) then
   begin
     Match := _RecognizeXY(FSearchArea, getGlpyhIndices(Filter.Blacklist));
 
@@ -615,13 +604,13 @@ begin
   end;
 end;
 
-function TSimpleOCR.RecognizeStatic(Filter: TOCRFilter; constref FontSet: TFontSet): String;
+function TSimpleOCR.RecognizeStatic(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): String;
 var
   Match: TOCRMatch;
 begin
   Result := '';
 
-  if Self.Init(FontSet, Filter, True) then
+  if Self.Init(Target, FontSet, Filter, True) then
   begin
     Match := Self._RecognizeX(FSearchArea, getGlpyhIndices(Filter.Blacklist));
 
@@ -629,7 +618,7 @@ begin
   end;
 end;
 
-function TSimpleOCR.RecognizeLines(Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray;
+function TSimpleOCR.RecognizeLines(Target: TOCRTarget; Filter: TOCRFilter; constref FontSet: TFontSet): TStringArray;
 var
   Indices: TIntegerArray;
   IndicesNoSmall: TIntegerArray;
@@ -662,7 +651,7 @@ begin
   Indices := getGlpyhIndices(Filter.Blacklist);
   IndicesNoSmall := getGlpyhIndices(Filter.Blacklist + '~^;`_-:.,'+#39+#34);
 
-  if Self.Init(FontSet, Filter, False) then
+  if Self.Init(Target, FontSet, Filter, False) then
   begin
     SearchBox := FSearchArea;
 

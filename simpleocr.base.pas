@@ -14,6 +14,12 @@ uses
   Classes, SysUtils,
   IntfGraphics;
 
+const
+  ALPHA_NUMERIC_SYM = [
+    'a'..'z', 'A'..'Z', '0'..'9',
+    '%', '&', '#', '$', '[', ']', '{', '}', '@', '!', '?'
+  ];
+
 type
   TStringArray = array of String;
   TIntegerArray = array of Integer;
@@ -48,8 +54,11 @@ type
     property Height: Integer read GetHeight;
   end;
 
+function ContainsAlphaNumSym(const Text: string): Boolean; inline;
+
 procedure Swap(var A, B: TPoint); inline;
 procedure Swap(var A, B: Integer); inline;
+procedure Swap(var A, B: TColorRGBA); inline;
 
 function TPABounds(const TPA: TPointArray): TBox;
 function InvertTPA(const TPA: TPointArray): TPointArray;
@@ -82,6 +91,15 @@ implementation
 uses
   GraphType, Graphics;
 
+function ContainsAlphaNumSym(const Text: string): Boolean;
+var i: Int32;
+begin
+  Result := False;
+  for i:=1 to Length(text) do
+    if Text[i] in ALPHA_NUMERIC_SYM then
+      Exit(True);
+end;
+
 procedure Swap(var A, B: TPoint);
 var
   C: TPoint;
@@ -94,6 +112,15 @@ end;
 procedure Swap(var A, B: Integer);
 var
   C: Integer;
+begin
+  C := A;
+  A := B;
+  B := C;
+end;
+
+procedure Swap(var A, B: TColorRGBA);
+var
+  C: TColorRGBA;
 begin
   C := A;
   A := B;

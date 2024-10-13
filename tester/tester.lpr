@@ -63,7 +63,7 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: 128; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: (0,128); Tolerances: (0, 0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -71,8 +71,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/multiline1.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline1.png'), Filter, FONT_QUILL_8);
 
   Assert(Length(Lines) = 5);
   Assert(Lines[0] = 'Select an Option');
@@ -87,7 +86,7 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 0; Tolerance: 5)); Invert: False);
+    ColorRule: (Colors: (0); Tolerances: (5); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -95,8 +94,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/multiline2.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline2.png'), Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 2);
   Assert(Lines[0] = 'Blighted super');
@@ -108,7 +106,7 @@ const
   Filter1: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: $009933; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: ($009933); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -116,7 +114,7 @@ const
   Filter2: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: $00CC33; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: ($00CC33); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -125,8 +123,7 @@ var
   Lines: TStringArray;
   I: Integer;
 begin
-  OCR.Client := LoadMatrix('images/multiline3.png');
-  Lines := OCR.RecognizeLines(Filter1, FONT_PLAIN_11);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter1, FONT_PLAIN_11);
   for I := 0 to High(Lines) do
     Lines[I] := StringReplace(Lines[I], 'I', 'l', [rfReplaceAll]);
 
@@ -137,8 +134,7 @@ begin
   Assert(Lines[3] = 'Emerald:');
   Assert(Lines[4] = 'Rune Longsword:');
 
-  OCR.Client := LoadMatrix('images/multiline3.png');
-  Lines := OCR.RecognizeLines(Filter2, FONT_PLAIN_11);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline3.png'), Filter2, FONT_PLAIN_11);
 
   Assert(Length(Lines) = 6);
   Assert(Lines[0] = '0');
@@ -154,7 +150,7 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: $000000; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: ($000000); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -162,8 +158,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/multiline4.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline4.png'), Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 3);
   Assert(Lines[0] = 'Fishing XP: 20');
@@ -176,7 +171,7 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 3099981; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: (3099981); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -184,8 +179,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/multiline5.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_PLAIN_12);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline5.png'), Filter, FONT_PLAIN_12);
 
   Assert(Length(Lines) = 7);
   Assert(Lines[0] = 'Ahrim');
@@ -204,7 +198,7 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: 0; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: (0); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
@@ -212,8 +206,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/multiline6.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/multiline6.png'), Filter, FONT_QUILL_8);
 
   Assert(Length(Lines) = 4);
   Assert(Lines[0] = 'Al Kharid PvP Arena.');
@@ -238,8 +231,7 @@ var
 
   function Recognize(Y: Integer): String;
   begin
-    OCR.Client := Copy(Mat, Y);
-    Result := OCR.RecognizeStatic(Filter, FONT_BOLD_12_SHADOW);
+    Result := OCR.RecognizeStatic(Copy(Mat, Y), Filter, FONT_BOLD_12_SHADOW);
   end;
 
 begin
@@ -283,8 +275,7 @@ const
     Blacklist: '';
   );
 begin
-  OCR.Client := LoadMatrix('images/shadow.png');
-  Assert(OCR.Recognize(Filter, FONT_PLAIN_11) = '53');
+  Assert(OCR.Recognize(LoadMatrix('images/shadow.png'), Filter, FONT_PLAIN_11) = '53');
 end;
 
 procedure Test_Static;
@@ -292,14 +283,13 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 0; Tolerance: 0)); Invert: False);
+    ColorRule: (Colors: (0); Tolerances: (0); Invert: False);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
   );
 begin
-  OCR.Client := LoadMatrix('images/static.png');
-  Assert(OCR.RecognizeStatic(Filter, FONT_PLAIN_12) = 'You have correctly entered your PIN.');
+  Assert(OCR.RecognizeStatic(LoadMatrix('images/static.png'), Filter, FONT_PLAIN_12) = 'You have correctly entered your PIN.');
 end;
 
 procedure Test_Threshold1;
@@ -313,8 +303,7 @@ const
     Blacklist: '';
   );
 begin
-  OCR.Client := LoadMatrix('images/thresh.png');
-  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Showing items: hello');
+  Assert(OCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12) = 'Showing items: hello');
 end;
 
 procedure Test_Threshold2;
@@ -328,8 +317,7 @@ const
     Blacklist: '';
   );
 begin
-  OCR.Client := LoadMatrix('images/thresh.png');
-  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Showing items:');
+  Assert(OCR.Recognize(LoadMatrix('images/thresh.png'), Filter, FONT_BOLD_12) = 'Showing items:');
 end;
 
 procedure Test_ThresholdInvert;
@@ -345,8 +333,7 @@ const
 var
   Lines: TStringArray;
 begin
-  OCR.Client := LoadMatrix('images/thresh_inv.png');
-  Lines := OCR.RecognizeLines(Filter, FONT_QUILL_8);
+  Lines := OCR.RecognizeLines(LoadMatrix('images/thresh_inv.png'), Filter, FONT_QUILL_8);
 
   Assert(Length(Lines) = 2);
   Assert(Lines[0] = 'Where would you like to teleport to?');
@@ -366,8 +353,7 @@ const
 var
   Match: Single;
 begin
-  OCR.Client := LoadMatrix('images/locate1.png');
-  Match := OCR.LocateText('items:', FONT_BOLD_12, Filter);
+  Match := OCR.Locate(LoadMatrix('images/locate1.png'), 'items:', FONT_BOLD_12, Filter);
 
   Assert(Abs(Match - 0.98) < 0.005); // 0.98 because some rogue pixels exist in the `:` character!
   Assert(Length(OCR.Matches) = 1);
@@ -386,13 +372,11 @@ begin
 
   // no matches, not enough tolerance
   Filter.AnyColorFilter.Tolerance := 5;
-  OCR.Client := LoadMatrix('images/locate2.png');
-  Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 0);
+  Assert(OCR.Locate(LoadMatrix('images/locate2.png'), 'Showing items:', FONT_BOLD_12, Filter) = 0);
 
   // should find now
   Filter.AnyColorFilter.Tolerance := 10;
-  OCR.Client := LoadMatrix('images/locate2.png');
-  Assert(OCR.LocateText('Showing items:', FONT_BOLD_12, Filter) = 1);
+  Assert(OCR.Locate(LoadMatrix('images/locate2.png'), 'Showing items:', FONT_BOLD_12, Filter) = 1);
 end;
 
 procedure Test_Invert;
@@ -400,16 +384,14 @@ const
   Filter: TOCRFilter = (
     FilterType: EOCRFilterType.COLOR;
     AnyColorFilter: ();
-    ColorRule: (Colors: ((Color: 0; Tolerance: 0), (Color: $47545D; Tolerance: 0)); Invert: True);
+    ColorRule: (Colors: (0, $47545D); Tolerances: (0, 0); Invert: True);
     ThresholdRule: ();
     ShadowRule: ();
     Blacklist: '';
   );
 begin
-  OCR.Client := LoadMatrix('images/invert.png');
-
-  Assert(OCR.Recognize(Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
-  Assert(OCR.RecognizeStatic(Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
+  Assert(OCR.Recognize(LoadMatrix('images/invert.png'), Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
+  Assert(OCR.RecognizeStatic(LoadMatrix('images/invert.png'), Filter, FONT_BOLD_12) = 'Remove Amulet of glory(1) (Members)');
 end;
 
 var
